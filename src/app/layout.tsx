@@ -6,7 +6,7 @@ const NAME = process.env.NEXT_PUBLIC_SITE_NAME ?? "SWBC site";
 
 export const metadata: Metadata = {
   title: NAME,
-  description: "Built in three hours, in public, in September.",
+  description: "One website a day, built in public, all September.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

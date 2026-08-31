@@ -12,7 +12,7 @@ export default function Home() {
         </p>
         <h1 className="font-display text-4xl font-bold tracking-tight">{name}</h1>
         <p className="max-w-prose text-lg text-muted">
-          Three hours, hard stop. If it is not done at three hours it ships unfinished.
+          One a day, built in public, shipped the same day.
         </p>
       </header>
 
