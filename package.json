@@ -4,11 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "NEXT_DIST_DIR=.next-build next build",
+    "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
     "db:push": "drizzle-kit push",
-    "db:gen": "drizzle-kit generate"
+    "db:gen": "drizzle-kit generate",
+    "build:check": "NEXT_DIST_DIR=.next-build next build"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
