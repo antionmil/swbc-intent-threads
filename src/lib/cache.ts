@@ -1,7 +1,26 @@
 import { eq, lt } from "drizzle-orm";
 import { db, hasDb, schema } from "./db";
 
+/* In-memory fallback used when there is no database. It had NO eviction:
+   every key ever computed stayed forever, so a long-running process grew
+   without bound. Expired entries are now dropped on access, and the map is
+   capped so a pathological key space cannot exhaust the heap. */
+const MEM_MAX = 500;
 const mem = new Map<string, { v: unknown; exp: number }>();
+
+function memSet(key: string, v: unknown, exp: number) {
+  const now = Date.now();
+  for (const [k, e] of mem) if (e.exp <= now) mem.delete(k);
+  while (mem.size >= MEM_MAX) mem.delete(mem.keys().next().value as string);
+  mem.set(key, { v, exp });
+}
+
+function memGet(key: string) {
+  const hit = mem.get(key);
+  if (!hit) return null;
+  if (hit.exp <= Date.now()) { mem.delete(key); return null; }
+  return hit;
+}
 
 /**
  * The function that makes "no LLM in the request path" true rather than
@@ -16,10 +35,10 @@ export async function getOrCompute<T>(key: string, ttlSeconds: number, fn: () =>
   const now = Date.now();
 
   if (!hasDb()) {
-    const hit = mem.get(key);
-    if (hit && hit.exp > now) return hit.v as T;
+    const hit = memGet(key);
+    if (hit) return hit.v as T;
     const v = await fn();
-    mem.set(key, { v, exp: now + ttlSeconds * 1000 });
+    memSet(key, v, now + ttlSeconds * 1000);
     return v;
   }
 
@@ -39,8 +58,7 @@ export async function getOrCompute<T>(key: string, ttlSeconds: number, fn: () =>
  *  what exists, never compute. */
 export async function peek<T>(key: string): Promise<T | null> {
   if (!hasDb()) {
-    const hit = mem.get(key);
-    return hit && hit.exp > Date.now() ? (hit.v as T) : null;
+    return (memGet(key)?.v as T) ?? null;
   }
   const rows = await db().select().from(schema.cache).where(eq(schema.cache.key, key)).limit(1);
   const row = rows[0];

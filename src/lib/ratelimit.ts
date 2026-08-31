@@ -4,7 +4,10 @@ import { db, hasDb, schema } from "./db";
 const IP_LIMIT = Number(process.env.IP_DAILY_LIMIT ?? 3);
 const CEILING = Number(process.env.DAILY_GENERATION_CEILING ?? 2000);
 
+/* Counters are day-scoped, so yesterday's entries are dead weight. Without
+   this the map gained one entry per IP per day and never shed any. */
 const memo = new Map<string, number>();
+let memoDay = "";
 const today = () => new Date().toISOString().slice(0, 10);
 
 export async function ipHash(req: Request) {
@@ -22,6 +25,7 @@ export async function ipHash(req: Request) {
 async function bump(bucket: string): Promise<number> {
   const day = today();
   if (!hasDb()) {
+    if (memoDay !== day) { memo.clear(); memoDay = day; }
     const n = (memo.get(bucket) ?? 0) + 1;
     memo.set(bucket, n);
     return n;
