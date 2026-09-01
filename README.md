@@ -4,6 +4,18 @@ The template every build day starts from. Make this a GitHub **template
 repository**: each morning, "Use this template" gives a fresh repo, import it
 to Vercel, and hour zero already has the boring part done.
 
+## Do not remove the `packageManager` pin
+
+`package.json` pins `pnpm@10.18.0`. Without it Vercel infers a pnpm version
+from the lockfile format, and on day 1 that guess produced
+`Command "pnpm install" exited with 1` on a repository where a clean
+`pnpm install --frozen-lockfile` succeeded locally every time. Two deploys
+were silently lost to it before the cause was found.
+
+`pnpm.onlyBuiltDependencies` is there for the same reason: pnpm 10 refuses to
+run a dependency's build scripts unless they are named. Locally that is a
+warning. On CI it can be an error.
+
 ## First-time setup (once)
 
 1. `pnpm install`
