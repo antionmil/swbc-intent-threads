@@ -1,8 +1,17 @@
 import { sql } from "drizzle-orm";
 import { db, hasDb, schema } from "./db";
 
-const IP_LIMIT = Number(process.env.IP_DAILY_LIMIT ?? 3);
-const CEILING = Number(process.env.DAILY_GENERATION_CEILING ?? 2000);
+/* `Number("")` is 0, and `Number("abc")` is NaN — so an env var that exists
+   but is empty silently sets the ceiling to zero and rejects every request
+   with "come back tomorrow". The site looks broken and nothing logs. Anything
+   that is not a positive number falls back to the default. */
+function positive(raw: string | undefined, fallback: number) {
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+const IP_LIMIT = positive(process.env.IP_DAILY_LIMIT, 3);
+const CEILING = positive(process.env.DAILY_GENERATION_CEILING, 2000);
 
 /* Counters are day-scoped, so yesterday's entries are dead weight. Without
    this the map gained one entry per IP per day and never shed any. */
