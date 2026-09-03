@@ -1,5 +1,5 @@
 import "server-only";
-import { clipped, decode } from "@/lib/readable";
+import { clipped, decode, ownWords } from "@/lib/readable";
 import { unstable_cache } from "next/cache";
 import { hasDb, sql } from "./db";
 import type { Lead } from "./corpus";
@@ -143,7 +143,8 @@ export async function recent(limit = 250): Promise<Lead[]> {
        order by l.asked_on desc nulls last, l.score desc
        limit ${limit}
     `) as unknown as Row[];
-    return rows.length ? dedupe(rows.map(toLead)) : BUNDLED.slice(0, limit);
+    const mapped = dedupe(rows.map(toLead)).filter((l) => ownWords(l.wish));
+    return mapped.length ? mapped : BUNDLED.slice(0, limit);
   } catch (e) {
     console.error("[leads] recent failed, falling back", e);
     return BUNDLED.slice(0, limit);

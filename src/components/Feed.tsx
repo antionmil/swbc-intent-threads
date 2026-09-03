@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Face } from "@/components/Face";
 
 export type Row = {
@@ -8,12 +8,31 @@ export type Row = {
   when: string; wish: string; url: string; avatar?: string | null;
 };
 
-/* The platform first, then what it was under. Printing only the video title
-   meant not one YouTube row on the site said it came from YouTube. */
-const WHERE = (r: Row) =>
-  r.src === "github" ? r.repo || "GitHub"
-  : r.src === "youtube" ? (r.ctx ? `YouTube · ${r.ctx}` : "YouTube")
-  : "Hacker News";
+const PLATFORM: Record<string, string> = {
+  github: "GitHub", hn: "Hacker News", youtube: "YouTube",
+};
+
+/* What it was said UNDER — the repo, or the video. The platform itself is on the
+   byline above, so repeating it here just printed "YouTube · YouTube · title".
+   Empty for Hacker News, which has no such container worth naming. */
+const UNDER = (r: Row) =>
+  r.src === "github" ? r.repo || "" : r.src === "youtube" ? r.ctx || "" : "";
+
+/** The full place, for a link's accessible name where there is no byline. */
+const WHERE = (r: Row) => {
+  const p = PLATFORM[r.src] ?? r.src;
+  const u = UNDER(r);
+  return u ? `${p} · ${u}` : p;
+};
+
+const FILTERS = [
+  { key: "all", label: "Everyone" },
+  { key: "github", label: "GitHub" },
+  { key: "hn", label: "Hacker News" },
+  { key: "youtube", label: "YouTube" },
+] as const;
+
+type FilterKey = (typeof FILTERS)[number]["key"];
 
 /* Cut on a word where one is near, and say that it was cut. The old code sliced
    at exactly 46 characters with no mark, inventing repo names. */
@@ -40,7 +59,9 @@ const MONTHS = "Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec".split(" ");
  */
 function ago(d: string, nowDay: string) {
   if (!d) return "";
-  const days = Math.round((Date.parse(nowDay + "T00:00:00Z") - Date.parse(d.slice(0, 10) + "T00:00:00Z")) / 864e5);
+  const days = Math.round(
+    (Date.parse(nowDay + "T00:00:00Z") - Date.parse(d.slice(0, 10) + "T00:00:00Z")) / 864e5,
+  );
   if (!Number.isFinite(days)) return "";
   if (days <= 0) return "today";
   if (days === 1) return "yesterday";
@@ -48,7 +69,6 @@ function ago(d: string, nowDay: string) {
   const [y, m] = d.slice(0, 10).split("-");
   return `${MONTHS[Number(m) - 1] ?? m} ${y}`;
 }
-
 
 /**
  * The stream, and the reason it is on the front page at all: the site proves
@@ -58,28 +78,56 @@ function ago(d: string, nowDay: string) {
 export function Feed({ initial, now }: { initial: Row[]; now: string }) {
   const [rows, setRows] = useState<Row[]>(initial);
   const [today, setToday] = useState(now.slice(0, 10));
+  const [filter, setFilter] = useState<FilterKey>("all");
+  const [loading, setLoading] = useState(false);
   const [fresh, setFresh] = useState<Set<string>>(new Set());
-  /* Anything discovered after THIS moment is new to you. Comparing against the
-     rows' own timestamps would mark everything new on day one, because the
-     backfill stamped 1,900 rows within the same second. */
+
   /* Seeded from the SERVER's clock, handed down as a prop: a browser whose
      clock runs fast would otherwise set a cursor in the future and never see
      another arrival. */
   const since = useRef(now);
   const seen = useRef(new Set(initial.map((r) => r.id)));
+  /* Read inside the interval so a filter change does not need a new timer. */
+  const active = useRef<FilterKey>("all");
+  active.current = filter;
+
+  const query = useCallback(
+    (f: FilterKey, extra = "") => `/api/feed?limit=14${f === "all" ? "" : `&src=${f}`}${extra}`,
+    [],
+  );
+
+  /* Switching filter replaces the list rather than merging into it: a row that
+     is on screen under "Everyone" and not under "GitHub" has to leave. */
+  useEffect(() => {
+    if (filter === "all" && rows === initial) return;
+    let dead = false;
+    setLoading(true);
+    fetch(query(filter))
+      .then((r) => r.json() as Promise<{ rows: Row[]; now: string }>)
+      .then((d) => {
+        if (dead) return;
+        setRows(d.rows ?? []);
+        setFresh(new Set());
+        seen.current = new Set((d.rows ?? []).map((r) => r.id));
+        if (d.now) { since.current = d.now; setToday(d.now.slice(0, 10)); }
+      })
+      .catch(() => { /* keep what is on screen rather than blanking it */ })
+      .finally(() => { if (!dead) setLoading(false); });
+    return () => { dead = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filter]);
 
   useEffect(() => {
     let dead = false;
     const tick = async () => {
-      /* No visibilityState guard. The first draft skipped hidden tabs, which
-         browsers already handle — a background tab's intervals are throttled to
-         roughly once a minute on their own. So the guard bought nothing, made a
-         reader who comes back to the tab wait up to another 45 seconds for the
-         arrivals that were already waiting, and made the whole feature
-         impossible to exercise: every browser available for testing here reports
-         the document hidden, so the poll never ran once outside production. */
+      /* No visibilityState guard. Browsers already throttle a background tab's
+         intervals to roughly once a minute, so the guard duplicated the platform
+         while making a reader who comes back wait up to another 45 seconds for
+         arrivals that were already sitting there — and making the feature
+         impossible to test, since every browser available here reports the
+         document hidden. */
       try {
-        const r = await fetch(`/api/feed?since=${encodeURIComponent(since.current)}&limit=10`);
+        const r = await fetch(query(active.current, `&since=${encodeURIComponent(since.current)}`));
         const d = (await r.json()) as { rows: Row[]; now: string };
         if (dead || !d.rows?.length) { if (d?.now) since.current = d.now; return; }
         const added = d.rows.filter((x) => !seen.current.has(x.id));
@@ -96,45 +144,87 @@ export function Feed({ initial, now }: { initial: Row[]; now: string }) {
     };
     const id = setInterval(tick, 45_000);
     return () => { dead = true; clearInterval(id); };
-  }, []);
+  }, [query]);
 
   return (
-    <ol className="mt-1">
-      {rows.map((r) => {
-        const isNew = fresh.has(r.id);
-        return (
-          <li
-            key={r.id}
-            className={`flex items-start gap-3 border-b border-rule py-3.5 ${isNew ? "land" : ""}`}
-          >
-            <span className="mt-0.5">
-              <Face who={r.who} src={r.src} avatar={r.avatar ?? undefined} />
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="prose-tight leading-relaxed break-words text-body">{r.wish}</p>
-              <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-                {isNew && (
-                  <span className="rounded-full border border-good/50 px-2 py-0.5 text-[10px] tracking-[0.1em] text-good uppercase">
-                    new
-                  </span>
-                )}
-                <span className="font-mono text-muted">{r.who}</span>
-                <span className="text-faint">· {trim(WHERE(r), 52)}</span>
-                <span className="text-faint">· {ago(r.when, today)}</span>
-              </p>
-            </div>
-            <a
-              href={r.url}
-              target="_blank"
-              rel="noopener nofollow"
-              aria-label={`Reply to ${r.who} on ${WHERE(r)}`}
-              className="mt-0.5 shrink-0 px-1 py-2 text-xs text-accent hover:underline"
+    <>
+      <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Filter by where it was said">
+        {FILTERS.map((f) => {
+          const on = filter === f.key;
+          return (
+            <button
+              key={f.key}
+              type="button"
+              onClick={() => setFilter(f.key)}
+              aria-pressed={on}
+              className={`rounded-full border px-3 py-1.5 text-xs transition-colors ${
+                on
+                  ? "border-accent text-accent"
+                  : "border-rule text-muted hover:border-edge hover:text-body"
+              }`}
             >
-              reply ↗
-            </a>
-          </li>
-        );
-      })}
-    </ol>
+              {f.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* aria-live, because rows arrive and the list changes without anybody
+          asking it to — silent mutation is invisible to a screen reader. */}
+      <ol className="mt-1" aria-live="polite" aria-busy={loading}>
+        {rows.map((r) => {
+          const isNew = fresh.has(r.id);
+          return (
+            <li
+              key={r.id}
+              className={`flex items-start gap-3 border-b border-rule py-3.5 ${isNew ? "land" : ""}`}
+            >
+              <span className="mt-0.5">
+                <Face who={r.who} src={r.src} avatar={r.avatar ?? undefined} />
+              </span>
+
+              <div className="min-w-0 flex-1">
+                {/* The person first, then what they said. A name and a face at the
+                    head of the row is what makes it read as somebody talking
+                    rather than as a database record. */}
+                <p className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm">
+                  <span className="font-medium text-ink">{r.who}</span>
+                  {isNew && (
+                    <span className="rounded-full border border-good/50 px-1.5 py-px text-[10px] tracking-[0.1em] text-good uppercase">
+                      new
+                    </span>
+                  )}
+                  <span className="text-xs text-faint">
+                    {PLATFORM[r.src] ?? r.src} · {ago(r.when, today)}
+                  </span>
+                </p>
+
+                <p className="prose-tight mt-1 leading-relaxed break-words text-body">{r.wish}</p>
+
+                {UNDER(r) && (
+                  <p className="mt-1 text-xs text-faint">{trim(UNDER(r), 60)}</p>
+                )}
+              </div>
+
+              <a
+                href={r.url}
+                target="_blank"
+                rel="noopener nofollow"
+                aria-label={`Reply to ${r.who} on ${WHERE(r)}`}
+                className="mt-0.5 shrink-0 px-1 py-2 text-xs text-accent hover:underline"
+              >
+                reply ↗
+              </a>
+            </li>
+          );
+        })}
+      </ol>
+
+      {rows.length === 0 && !loading && (
+        <p className="py-8 text-center text-sm text-muted">
+          Nothing from there yet. The crons look again every night.
+        </p>
+      )}
+    </>
   );
 }

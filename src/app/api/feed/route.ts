@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { hasDb, sql } from "@/lib/db";
-import { clipped, decode } from "@/lib/readable";
+import { clipped, decode, ownWords } from "@/lib/readable";
 
 export const dynamic = "force-dynamic";
 
@@ -17,8 +17,13 @@ type Wire = {
  * which anything can arrive while you are reading. The feed itself is ordered by
  * asked_on, because that is the true chronology of somebody wanting a thing.
  */
+/* Closed set, checked here rather than interpolated: the value reaches a query. */
+const SOURCES = new Set(["github", "hn", "youtube"]);
+
 export async function GET(req: NextRequest) {
   const since = req.nextUrl.searchParams.get("since");
+  const asked = req.nextUrl.searchParams.get("src");
+  const src = asked && SOURCES.has(asked) ? asked : null;
   const limit = Math.min(30, Number(req.nextUrl.searchParams.get("limit")) || 12);
   const now = new Date().toISOString();
   const dead = { headers: { "cache-control": "no-store" } };
@@ -26,16 +31,22 @@ export async function GET(req: NextRequest) {
   if (!hasDb()) return NextResponse.json({ rows: [], now }, dead);
 
   try {
+    /* `${src}` is a bound parameter like every other value here — the tagged
+       template makes it one — and `src is null or` lets one query serve both the
+       filtered and unfiltered case without concatenating SQL. */
     const rows = (since
       ? await sql()`
           select l.id, l.src, l.who, l.repo, l.ctx, to_char(l.asked_on, 'YYYY-MM-DD') as asked_on, l.wish, l.url, l.avatar
             from leads l left join blocked b on lower(b.who) = lower(l.who)
-           where b.who is null and l.first_seen > ${since}
+           where b.who is null and lower(l.who) not in ('ghost', 'deleted', '[deleted]')
+             and (${src}::text is null or l.src = ${src})
+             and l.first_seen > ${since}
            order by l.first_seen desc limit ${limit}`
       : await sql()`
           select l.id, l.src, l.who, l.repo, l.ctx, to_char(l.asked_on, 'YYYY-MM-DD') as asked_on, l.wish, l.url, l.avatar
             from leads l left join blocked b on lower(b.who) = lower(l.who)
-           where b.who is null
+           where b.who is null and lower(l.who) not in ('ghost', 'deleted', '[deleted]')
+             and (${src}::text is null or l.src = ${src})
            order by l.asked_on desc nulls last, l.score desc limit ${limit}`
     ) as unknown as Record<string, string | null>[];
 
@@ -44,7 +55,7 @@ export async function GET(req: NextRequest) {
       repo: r.repo ?? "", ctx: r.ctx ? decode(r.ctx) : "", when: String(r.asked_on ?? ""),
       wish: clipped(String(r.wish)), url: String(r.url), avatar: r.avatar,
     }));
-    return NextResponse.json({ rows: wire, now }, dead);
+    return NextResponse.json({ rows: wire.filter((r) => ownWords(r.wish)), now }, dead);
   } catch (e) {
     /* A quiet feed beats an error banner: the page already has rows on it. */
     console.error("[feed]", e);

@@ -152,3 +152,28 @@ export function clipped(s: string): string {
   if (/[.!?]["')\]]?$/.test(w)) return w;
   return w.replace(/[\s,;:–—-]+$/, "") + "…";
 }
+
+/**
+ * Does this read as somebody's own sentence, or as a fragment of someone else's?
+ *
+ * The miner searches for a trigger phrase and keeps the text around it. When the
+ * phrase appears inside a longer document — a spec that says «"I wish there was
+ * a tool that…" posts are the highest signal», or a comment quoting an FAQ back
+ * at it — what gets stored opens mid-sentence, and the site then prints another
+ * person's words under this person's name and face. Four of the twenty rows on
+ * the front page were like this.
+ *
+ * The test is narrow on purpose: a closing double-quote before any opening one,
+ * or a quote followed by an exchange marker. Straight quotes only — a curly or
+ * German pair is typographic and balanced, and a looser version of this rule
+ * threw out «I wish there was a standard „server app“ format», which is exactly
+ * the kind of lead the site exists to find. It fires on 18 of 1,931 rows, 16 of
+ * them unambiguously fragments. Losing the other two costs a lead; keeping all
+ * eighteen costs somebody their words being put in a stranger's mouth.
+ */
+export function ownWords(t: string): boolean {
+  if (/"\s*[>\u2192]/.test(t)) return false;
+  const i = t.indexOf('"');
+  if (i < 1) return true;
+  return !(/[\w.?!,]$/.test(t.slice(0, i)) && /^"\s+[a-z]/.test(t.slice(i)));
+}

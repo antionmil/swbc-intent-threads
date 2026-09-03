@@ -1,5 +1,5 @@
 import "server-only";
-import { clipped, decode } from "@/lib/readable";
+import { clipped, decode, ownWords } from "@/lib/readable";
 import raw from "@/data/corpus.json";
 import blocklist from "@/data/blocked.json";
 
@@ -42,7 +42,7 @@ export const LEADS = (raw as Lead[]).filter((l) => !BLOCKED.has(l.who.toLowerCas
      gets faces too — the fallback path is not a degraded-looking page. YouTube
      avatars are per-comment and only exist in the database. */
   avatar: l.avatar ?? (l.src === "github" ? `https://github.com/${l.who}.png?size=96` : undefined),
-}));
+})).filter((l) => ownWords(l.wish));
 
 /* Inverse document frequency, computed once per cold start over ~1,300 rows.
    Without it "app", "tool" and "data" drown out the words that actually
