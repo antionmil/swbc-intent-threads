@@ -14,11 +14,11 @@ export const metadata: Metadata = {
   twitter: { card: "summary_large_image", title: TITLE, description: DESC },
 };
 
+/* No theme script in <head>: this site has no toggle, so the localStorage read
+   copied over from day 2 was dead code — and it cost the ability to say
+   "nothing kept in your browser" truthfully. */
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    {/* No theme script: this site has no toggle, so the localStorage read
-        copied over from day 2 was dead code — and it made the privacy line
-        untrue for no benefit. */}
     <html lang="en" data-theme="dark">
       <body className="min-h-dvh antialiased">
         {children}
