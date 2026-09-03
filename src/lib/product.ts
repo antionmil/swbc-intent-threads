@@ -1,4 +1,5 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import { terms } from "./corpus";
 
 /**
@@ -42,7 +43,24 @@ export function normalise(input: string): string | null {
   } catch { return null; }
 }
 
-export async function readProduct(url: string): Promise<Read | null> {
+/**
+ * Cached by URL, and this is the abuse mitigation.
+ *
+ * The page itself is force-dynamic — the URL is only known at request time —
+ * and Next sends `no-store` for such routes, which overrode the Cache-Control
+ * header set in next.config.ts. So the caching has to happen around the
+ * expensive part instead: the outbound fetch of somebody else's page.
+ *
+ * With this, a second request for the same URL costs no outbound request at
+ * all. What is still unbounded is walking thousands of DISTINCT URLs, which
+ * needs shared state this site does not have — written down rather than
+ * papered over with a per-instance counter, which is what day 1 shipped and it
+ * did nothing under load.
+ */
+export const readProduct = (url: string) =>
+  unstable_cache(() => fetchProduct(url), ["product", url], { revalidate: 3600 })();
+
+async function fetchProduct(url: string): Promise<Read | null> {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 8000);
   let html = "";
