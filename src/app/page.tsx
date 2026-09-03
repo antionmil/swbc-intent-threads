@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { LEADS } from "@/lib/corpus";
-import { recent, total } from "@/lib/leads";
+import { freshCount, recent, total } from "@/lib/leads";
 import { Feed } from "@/components/Feed";
 import { Paste, StickyPaste } from "@/components/Paste";
 
@@ -19,8 +18,9 @@ export const revalidate = 900;
  * catch. A failed lookup renders its own message on /find.
  */
 export default async function Home() {
-  const [count, rows] = await Promise.all([total(), recent(14)]);
-  const fresh = LEADS.filter((l) => (l.when ?? "") >= isoDaysAgo(7)).length;
+  /* All three from the same place. This page used to print a live database
+     total beside a freshness figure counted off the build-time artifact. */
+  const [count, fresh, rows] = await Promise.all([total(), freshCount(), recent(14)]);
 
   return (
     <main className="relative">
@@ -67,11 +67,13 @@ export default async function Home() {
           </Link>
         </div>
 
-        <Feed initial={rows} />
+        {/* The server's clock, so the relative dates are identical in the cached HTML
+            and after hydration. */}
+        <Feed initial={rows} now={new Date().toISOString()} />
 
         <p className="mt-6 text-center">
           <Link href="/bank" className="text-sm text-accent underline underline-offset-4">
-            Keep reading — {count.toLocaleString()} more →
+            Keep reading — the whole bank →
           </Link>
         </p>
 
@@ -103,6 +105,10 @@ export default async function Home() {
             >
               Ask us to remove you
             </a>
+            , or read{" "}
+            <Link href="/privacy" className="underline underline-offset-4 hover:text-accent">
+              what this site holds
+            </Link>
             .
           </p>
         </section>
@@ -111,6 +117,3 @@ export default async function Home() {
   );
 }
 
-function isoDaysAgo(n: number) {
-  return new Date(Date.now() - n * 864e5).toISOString().slice(0, 10);
-}

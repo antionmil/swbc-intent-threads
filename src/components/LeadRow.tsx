@@ -39,16 +39,24 @@ export function LeadRow({ hit, band }: { hit: Hit; band: keyof typeof TONE }) {
   const on = why(hit);
 
   return (
-    <li className="flex gap-4 border-b border-rule py-5">
+    /* Stacked on a phone, three columns from `sm` up.
+     *
+     * As a flex row at every width this put the person's words in a 20-to-66px
+     * column on a 388px viewport — measured — because the evidence badge took
+     * 141px and the reply pill 80px before the text got any. The words are the
+     * product; they get the full width when there is not much of it. */
+    <li className="border-b border-rule py-5 sm:flex sm:gap-4">
       <span
-        className={`mt-0.5 h-fit shrink-0 rounded-full border px-2.5 py-1 font-mono text-[11px] whitespace-nowrap ${TONE[band]}`}
+        className={`mb-2.5 inline-block h-fit rounded-full border px-2.5 py-1 font-mono text-[11px] whitespace-nowrap sm:mt-0.5 sm:mb-0 sm:shrink-0 ${TONE[band]}`}
         title={`Shared with your page: ${shared.join(", ")}`}
       >
         {on.join(" · ")}
       </span>
 
       <div className="min-w-0 flex-1">
-        <p className="prose-tight leading-relaxed text-body">
+        {/* break-words, because a lead can contain a URL or an unbroken
+            identifier longer than a phone is wide. */}
+        <p className="prose-tight leading-relaxed break-words text-body">
           <Marked text={lead.wish} shared={shared} />
         </p>
         {/* The video, not decoration: "what would you recommend for a cleaning
@@ -70,12 +78,15 @@ export function LeadRow({ hit, band }: { hit: Hit; band: keyof typeof TONE }) {
         </p>
       </div>
 
-      <span className="mt-0.5 h-fit shrink-0">
+      <span className="mt-3 block h-fit sm:mt-0.5 sm:shrink-0">
         <a
           href={lead.url}
           target="_blank"
           rel="noopener nofollow"
-          className="rounded-full border border-edge px-4 py-1.5 text-sm text-body transition-colors hover:border-accent hover:text-accent"
+          /* Every one of these links said only "reply", so a screen-reader list
+             of links on /bank was 249 identical entries. */
+          aria-label={`Reply to ${lead.who} on ${where}`}
+          className="inline-block rounded-full border border-edge px-4 py-1.5 text-sm text-body transition-colors hover:border-accent hover:text-accent"
         >
           reply ↗
         </a>

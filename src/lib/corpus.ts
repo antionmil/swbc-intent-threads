@@ -1,6 +1,7 @@
 import "server-only";
 import { clipped, decode } from "@/lib/readable";
 import raw from "@/data/corpus.json";
+import blocklist from "@/data/blocked.json";
 
 /**
  * The corpus, and the arithmetic that ranks it.
@@ -24,7 +25,15 @@ export type Lead = {
   avatar?: string;
 };
 
-export const LEADS = (raw as Lead[]).map((l) => ({
+/* The artifact is what gets served when a database read fails, so the takedown
+   list has to reach it too — the `blocked` table only exists on the live path.
+   "ghost" is GitHub's placeholder for a deleted account: seven rows carried it,
+   each with a face and a name for somebody who is no longer there. */
+const BLOCKED = new Set(
+  (blocklist.authors as string[]).map((a) => a.toLowerCase()).concat(["ghost", "deleted", "[deleted]"]),
+);
+
+export const LEADS = (raw as Lead[]).filter((l) => !BLOCKED.has(l.who.toLowerCase())).map((l) => ({
   ...l,
   /* The artifact stores what the person typed, markdown and all. */
   wish: clipped(l.wish),

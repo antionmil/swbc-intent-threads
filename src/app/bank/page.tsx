@@ -10,11 +10,15 @@ export const revalidate = 3600;
    and the page-level notice on the front page says the same thing once. */
 const WHERE: Record<string, (l: { repo: string; ctx?: string }) => string> = {
   github: (l) => l.repo || "GitHub",
-  youtube: (l) => l.ctx || "YouTube",
+  youtube: (l) => (l.ctx ? `YouTube · ${l.ctx}` : "YouTube"),
   hn: () => "Hacker News",
 };
 
 export const metadata: Metadata = {
+  /* Belt and braces with robots.txt: a disallow asks a crawler not to fetch the
+     page, while noindex keeps it out of the results even if something links
+     straight to it. Real people's names are on this page. */
+  robots: { index: false, follow: true },
   title: "The bank — Intent threads",
   description: "Every public ask in the index: one person, what they wanted, and where they said it.",
 };
@@ -30,9 +34,16 @@ export default async function Bank() {
 
   return (
     <main className="mx-auto w-full max-w-3xl px-5 pt-10 pb-20 sm:px-6">
-      <Link href="/" className="text-sm text-muted underline underline-offset-4 hover:text-accent">
-        ← Find yours
-      </Link>
+      <p className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+        <Link href="/" className="text-muted underline underline-offset-4 hover:text-accent">
+          ← Find yours
+        </Link>
+        {/* The removal route reaches every page a person could land on, not just
+            the home page — somebody sent a link to their own row arrives here. */}
+        <Link href="/privacy" className="text-muted underline underline-offset-4 hover:text-accent">
+          What this site holds, and how to come out of it
+        </Link>
+      </p>
 
       <header className="mt-7">
         <h1 className="text-3xl leading-tight font-semibold tracking-tight sm:text-4xl">The bank</h1>
@@ -54,7 +65,7 @@ export default async function Bank() {
               <Face who={l.who} src={l.src} avatar={l.avatar} size={30} />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="prose-tight leading-relaxed text-body">{l.wish}</p>
+              <p className="prose-tight leading-relaxed break-words text-body">{l.wish}</p>
               {l.ctx && (
                 <p className="mt-1.5 text-xs text-faint">
                   asked under <span className="text-muted">{l.ctx}</span>
@@ -74,6 +85,7 @@ export default async function Bank() {
                   href={l.url}
                   target="_blank"
                   rel="noopener nofollow"
+                  aria-label={`Reply to ${l.who} on ${WHERE[l.src]?.(l) ?? l.src}`}
                   className="text-accent underline underline-offset-4"
                 >
                   reply ↗

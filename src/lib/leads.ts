@@ -60,7 +60,7 @@ async function search(terms: string[], limit: number): Promise<Lead[] | null> {
              ts_rank(l.fts, websearch_to_tsquery('english', ${q})) as rank
         from leads l
         left join blocked b on lower(b.who) = lower(l.who)
-       where b.who is null
+       where b.who is null and lower(l.who) not in ('ghost', 'deleted', '[deleted]')
          and l.fts @@ websearch_to_tsquery('english', ${q})
        -- The expression is repeated rather than reusing the alias: Postgres
        -- will not resolve a select alias inside an ORDER BY expression, and
@@ -89,6 +89,36 @@ export async function count(): Promise<number> {
 
 export const total = unstable_cache(count, ["lead-count"], { revalidate: 300 });
 
+/** How many asks landed in the last 7 days. */
+async function fresh7(): Promise<number> {
+  if (!hasDb()) return BUNDLED.filter((l) => l.when >= iso7()).length;
+  try {
+    const r = (await sql()`
+      select count(*)::int as n from leads l
+        left join blocked b on lower(b.who) = lower(l.who)
+       where b.who is null and lower(l.who) not in ('ghost', 'deleted', '[deleted]')
+         and l.asked_on >= current_date - 7
+    `) as unknown as { n: number }[];
+    return r[0]?.n ?? 0;
+  } catch (e) {
+    console.error("[leads] fresh7 failed", e);
+    return BUNDLED.filter((l) => l.when >= iso7()).length;
+  }
+}
+const iso7 = () => new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
+
+/* Counted in the database, like the total beside it. The front page used to read
+   this off the bundled artifact while printing a live total in the same
+   sentence: "1,931 public asks indexed · 14 of them from the last 7 days" when
+   the real figure was 22. Two sources, one sentence, and the half that was
+   frozen at build time would have decayed to 0 while the other kept climbing. */
+export const freshCount = unstable_cache(fresh7, ["lead-fresh-7"], { revalidate: 300 });
+
+/** How many distinct people, not how many rows. */
+export function peopleIn(rows: { who: string }[]): number {
+  return new Set(rows.map((r) => r.who.toLowerCase())).size;
+}
+
 /* One person can post the same thought twice, a character apart — a ">" that
    became a "→" made two rows out of one and put both at the top of the bank.
    Keyed on letters and digits only so that difference stops mattering. Cheap,
@@ -109,7 +139,7 @@ export async function recent(limit = 250): Promise<Lead[]> {
       select l.id, l.src, l.who, l.repo, l.ctx, to_char(l.asked_on, 'YYYY-MM-DD') as asked_on, l.wish, l.url, l.score, l.avatar, 0 as rank
         from leads l
         left join blocked b on lower(b.who) = lower(l.who)
-       where b.who is null
+       where b.who is null and lower(l.who) not in ('ghost', 'deleted', '[deleted]')
        order by l.asked_on desc nulls last, l.score desc
        limit ${limit}
     `) as unknown as Row[];

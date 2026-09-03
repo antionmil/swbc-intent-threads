@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { hasDb, sql } from "@/lib/db";
 import { mineGithub, mineYouTube } from "@/lib/mine";
@@ -14,13 +15,35 @@ export const dynamic = "force-dynamic";
  * a growing bank of leads, that was the real flaw, worse than where the rows
  * were stored.
  */
+function sameSecret(a: string, b: string) {
+  const x = Buffer.from(a);
+  const y = Buffer.from(b);
+  /* timingSafeEqual throws on a length mismatch, which is itself a leak of one
+     bit — compare a fixed-width digest-shaped pair instead by padding to the
+     longer of the two and folding the length into the result. */
+  if (x.length !== y.length) return false;
+  return timingSafeEqual(x, y);
+}
+
 export async function GET(req: NextRequest, { params }: { params: Promise<{ job: string }> }) {
-  /* Vercel signs its own cron calls with this header; the secret covers manual
-     runs. Without the check, anyone can make us mine on their schedule. */
+  /* The bearer token, and nothing else.
+   *
+   * This used to accept any request carrying an x-vercel-cron header, on the
+   * belief that only Vercel could set it. Vercel does not strip it from inbound
+   * requests: `curl -H "x-vercel-cron: 1"` — and even a valueless
+   * `-H "x-vercel-cron;"` — passed the guard on the live site. That handed any
+   * stranger the miners: the YouTube quota (10,000 units a day), the GitHub
+   * rate limit, writes to the leads table, and a 300-second function held open
+   * per call. Vercel's own documentation never offers that header as an auth
+   * signal; it says CRON_SECRET "will be automatically sent as an Authorization
+   * header when Vercel invokes your cron job", and the sample code compares
+   * exactly that. So does this.
+   *
+   * timingSafeEqual, because the comparison is against a secret and a plain !==
+   * returns as soon as two bytes differ. */
   const secret = process.env.CRON_SECRET?.trim();
-  const auth = req.headers.get("authorization");
-  const fromVercel = req.headers.get("x-vercel-cron") !== null;
-  if (!fromVercel && (!secret || auth !== `Bearer ${secret}`)) {
+  const auth = req.headers.get("authorization") ?? "";
+  if (!secret || !sameSecret(auth, `Bearer ${secret}`)) {
     return NextResponse.json({ error: "no" }, { status: 401 });
   }
   if (!hasDb()) return NextResponse.json({ error: "no database configured" }, { status: 503 });

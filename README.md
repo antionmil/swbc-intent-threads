@@ -8,15 +8,27 @@ Day 3 of a 26-day [one-website-a-day run](https://onedaybuilt.com).
 ## What it is
 
 Every row is one person, in public, saying they wanted something that did not
-exist for them yet — mined from Hacker News comments and GitHub issue bodies.
+exist for them yet — mined from GitHub issues, Hacker News comments and
+YouTube comments.
 Their words, their name, their link. You paste a product URL; the site reads
 what that page says it does and ranks the corpus against it.
 
 ## Three decisions worth writing down
 
-- **No database.** The corpus is identical for every visitor, so it ships as a
-  static artifact and the search runs in memory. Neon scales to zero after five
-  minutes idle and a cold query would have been the slowest thing on the page.
+- **Neon Postgres, with the static artifact as a fallback.** The corpus started
+  as a file, because it is identical for every visitor and Neon scales to zero
+  after five minutes idle. It moved into a database when two daily crons started
+  adding to it — a bank of leads that only grows when somebody runs a script by
+  hand is not a bank of leads. Postgres does recall with a generated `tsvector`
+  and a GIN index; the ranking still runs in memory. The bundled artifact is
+  still committed and still served whenever a database read fails, so a cold or
+  unreachable Neon degrades the site rather than emptying it.
+
+- **Two crons, authenticated by `CRON_SECRET` alone.** `/api/cron/github` and
+  `/api/cron/youtube` run daily. The guard used to also accept any request
+  carrying an `x-vercel-cron` header; Vercel does not strip that header from
+  inbound requests, so it authenticated nobody. It is the bearer token now, as
+  Vercel's own documentation prescribes.
 
 - **No model in the request path.** A product page states what it does in its
   title, meta description and first heading — that is what those elements are

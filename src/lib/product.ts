@@ -16,6 +16,35 @@ export type Read = {
 };
 
 const pick = (html: string, re: RegExp) => (html.match(re)?.[1] ?? "").trim();
+
+/**
+ * Read one meta tag's content, in a single linear pass.
+ *
+ * The two patterns this replaces were
+ *   /<meta[^>]+name=["']description["'][^>]+content=["']([\s\S]{0,400}?)["']/i
+ * and its og: twin. Two unbounded [^>]+ runs separated by a literal is
+ * polynomial: for every starting position the engine can split the same stretch
+ * of characters between them in n ways. Measured on 600KB of `<meta name="x" >`
+ * repeated — a page anybody can serve from a URL they paste into this site —
+ * the pair took 14.6s and 24.2s. Thirty-nine seconds of CPU, per request, from
+ * one cheap HTTP response. The 8-second fetch timeout does not cover it: that
+ * timeout guards the download, and this runs after the body is already in hand.
+ *
+ * Splitting the tag out first with /<meta\b[^>]*>/g is linear (one bounded run,
+ * no ambiguity), and each tag it yields is short, so the attribute reads inside
+ * it cannot blow up either. Same result, 3ms on the same payload.
+ */
+function metaContent(html: string, key: string): string {
+  const wanted = key.toLowerCase();
+  for (const m of html.matchAll(/<meta\b[^>]*>/gi)) {
+    const tag = m[0];
+    const name = /\b(?:name|property)\s*=\s*["']([^"']{0,80})["']/i.exec(tag)?.[1];
+    if (!name || name.trim().toLowerCase() !== wanted) continue;
+    const content = /\bcontent\s*=\s*["']([^"']{0,400})["']/i.exec(tag)?.[1];
+    if (content) return content;
+  }
+  return "";
+}
 const strip = (s: string) =>
   s.replace(/<[^>]+>/g, " ")
    .replace(/&(#\d+|[a-z]+);/gi, " ")
@@ -104,10 +133,7 @@ async function fetchProduct(url: string): Promise<Read | null> {
   }
 
   const title = strip(pick(html, /<title[^>]*>([\s\S]{0,300}?)<\/title>/i));
-  const desc = strip(
-    pick(html, /<meta[^>]+name=["']description["'][^>]+content=["']([\s\S]{0,400}?)["']/i) ||
-    pick(html, /<meta[^>]+property=["']og:description["'][^>]+content=["']([\s\S]{0,400}?)["']/i),
-  );
+  const desc = strip(metaContent(html, "description") || metaContent(html, "og:description"));
   const h1 = strip(pick(html, /<h1[^>]*>([\s\S]{0,300}?)<\/h1>/i));
   const h2s = [...html.matchAll(/<h2[^>]*>([\s\S]{0,200}?)<\/h2>/gi)]
     .slice(0, 6).map((m) => strip(m[1])).filter(Boolean);

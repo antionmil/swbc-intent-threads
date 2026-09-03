@@ -43,6 +43,31 @@ export function decode(s: string): string {
   });
 }
 
+/* The field headings a GitHub issue FORM puts in the body. Everything from the
+   first one onward is the template talking, not the person: dropdown values,
+   "No response" for the boxes they left blank, priority labels. */
+const FORM_HEADING =
+  /\b(?:Is your feature request related to a problem|Describe the solution you'?d like|Describe alternatives you'?ve considered|Alternative Solutions?|Additional context|Steps to reproduce|Expected behaviou?r|Actual behaviou?r|Contact Details|Anything else|Feature Category|Priority|Checklist|Acknowledgements?|No response)\b/;
+
+/**
+ * Keep the person's sentence, drop the form around it.
+ *
+ * "I wish there were an option to enable automode. ### Alternative Solutions
+ * _No response_ ### Priority Critical - Blocking my work" — only the first
+ * sentence is theirs. Picking the headings out one by one leaves the dropdown
+ * values stranded, so cut at the first heading instead. 58 rows carried a
+ * heading, 47 carried "No response".
+ *
+ * Only when enough of a sentence survives the cut: a wish that opens with the
+ * template would otherwise be erased entirely, and a short lead is worse than
+ * a slightly noisy one.
+ */
+function dropForm(t: string): string {
+  const m = FORM_HEADING.exec(t);
+  if (!m || m.index < 40) return t;
+  return t.slice(0, m.index).trim();
+}
+
 export function readable(s: string): string {
   return decode(s)
     .replace(/<!--[\s\S]*?-->/g, " ")                       // html comments
@@ -75,6 +100,16 @@ export function readable(s: string): string {
        reads "---" as an em dash, so print one rather than delete the author's
        punctuation — either way it stops looking like a broken page. */
     .replace(/\s-{3,}\s/g, " — ")
+    .replace(/\s*[-*+]?\s*\[[ xX]\]\s*/g, " ")
+
+    /* Somebody's email address is not part of their wish, and republishing it
+       on a public page invites exactly the spam this site is trying not to be.
+       Four rows carried one; three were real, one of them a work address, and
+       one belonged to a person who never posted it — it was quoted by somebody
+       else. Removed everywhere, not redacted per row, because the next mine
+       will find more. */
+    .replace(/\b[\w.%+-]+@[\w-]+(?:\.[\w-]+)+\b/g, "[email removed]")
+
     /* Delimiters the miner's cut orphaned: a comment whose "-->" never arrived
        runs to the end of the text by definition, and a lone "**" is a marker
        with nothing left to mark. Both are noise either way. */
@@ -101,7 +136,13 @@ const CUT = 290;
 
 /** `readable`, then ended honestly if a miner had already cut it short. */
 export function clipped(s: string): string {
-  const t = readable(s);
+  const t = dropForm(
+    /* Somebody's email address is not part of their wish, and republishing it on
+       a public page invites exactly the spam this site is trying not to be. Four
+       rows carried one; three were real, one of them a work address, and one
+       belonged to a person who never posted it — somebody else quoted it. */
+    readable(s).replace(/\b[\w.%+-]+@[\w-]+(?:\.[\w-]+)+\b/g, "[email removed]"),
+  );
   /* Measured on the RAW string: stripping markdown shortens it, so a body the
      miner truncated at 320 can arrive here under the threshold and keep its
      half-word. The cut happened before this function ever saw the text. */

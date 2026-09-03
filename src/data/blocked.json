@@ -1,0 +1,4 @@
+{
+  "_note": "People who asked not to be in here. The database has a `blocked` table that every live query joins against, but the bundled artifact is served whenever a database read fails — and an honoured takedown that silently reverts during an outage is not an honoured takedown. So a removal is written to BOTH: the table, and this file. Handles are matched case-insensitively.",
+  "authors": []
+}

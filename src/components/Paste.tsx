@@ -22,7 +22,9 @@ export function Paste({ big = false }: { big?: boolean }) {
         className={
           big
             ? "min-w-0 flex-1 rounded-xl border border-edge bg-ground/80 px-4 py-3.5 font-mono text-ink outline-none placeholder:text-faint focus:border-accent"
-            : "min-w-0 flex-1 rounded-lg border border-edge bg-ground/80 px-3 py-2 font-mono text-sm text-ink outline-none placeholder:text-faint focus:border-accent"
+            /* text-base, not text-sm: iOS Safari zooms the viewport whenever a
+               visitor taps an input under 16px, and there is no way back out. */
+            : "min-w-0 flex-1 rounded-lg border border-edge bg-ground/80 px-3 py-2 font-mono text-base text-ink outline-none placeholder:text-faint focus:border-accent"
         }
       />
       <button

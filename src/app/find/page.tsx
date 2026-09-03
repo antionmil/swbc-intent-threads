@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { LeadRow } from "@/components/LeadRow";
 import { band, rank, type Hit } from "@/lib/corpus";
-import { search } from "@/lib/leads";
+import { peopleIn, search } from "@/lib/leads";
 import { normalise, readProduct } from "@/lib/product";
 
 /* Cannot be prerendered — the URL is only known at request time — but the
@@ -57,9 +57,16 @@ export default async function Find({
 
   return (
     <main className="mx-auto w-full max-w-3xl px-5 pt-10 pb-20 sm:px-6">
-      <Link href="/" className="text-sm text-muted underline underline-offset-4 hover:text-accent">
-        ← Try another
-      </Link>
+      <p className="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+        <Link href="/" className="text-muted underline underline-offset-4 hover:text-accent">
+          ← Try another
+        </Link>
+        {/* Somebody sent their own row can land straight here, so the way out
+            has to be on this page too, not only on the home page. */}
+        <Link href="/privacy" className="text-muted underline underline-offset-4 hover:text-accent">
+          If one of these is you
+        </Link>
+      </p>
 
       <header className="mt-7 border-b border-rule pb-6">
         <p className="text-[11px] tracking-[0.2em] text-faint uppercase">We read your page as</p>
@@ -93,7 +100,10 @@ export default async function Find({
           {exact > 0 ? (
             <p className="mt-7 text-sm text-muted">
               <span className="text-ink">
-                {strong.length} {strong.length === 1 ? "person" : "people"}
+                {/* Distinct handles. It counted rows, so somebody who had asked
+                    twice was two people. */}
+                {peopleIn(strong.map((h) => h.lead))}{" "}
+                {peopleIn(strong.map((h) => h.lead)) === 1 ? "person" : "people"}
               </span>{" "}
               asked for something like this ·{" "}
               <span className="text-good">{exact} worth reading first</span>
@@ -144,7 +154,10 @@ function Empty({ host, closest = [] }: { host: string; closest?: Hit[] }) {
             The nearest things we have. None of these is a match — they share a word
             with you, not a need.
           </p>
-          <ol className="mt-3 opacity-60">
+          {/* Was opacity-60, which drags every token underneath it below AA. A
+              weaker match is said in words above; it does not need to be harder to
+              read as well. */}
+          <ol className="mt-3">
             {closest.map((h) => (
               <LeadRow key={h.lead.id} hit={h} band="loose" />
             ))}
