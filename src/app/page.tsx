@@ -49,9 +49,9 @@ export default function Home() {
         newest {newest}
       </p>
       <p className="mt-2 text-xs text-faint">
-        No sign-up and no account. We do not store the address you paste — it is read
-        once, matched, and gone. Page views are counted by Vercel Analytics, which sets
-        no cookie.
+        No sign-up, no account, and nothing kept in your browser. The address you
+        paste is read once, matched, and discarded. Page views are counted by Vercel
+        Analytics.
       </p>
 
       <section className="mt-16 border-t border-rule pt-10">

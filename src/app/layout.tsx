@@ -16,17 +16,10 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" data-theme="dark" suppressHydrationWarning>
-      <head>
-        {/* Set before first paint, or a returning light-theme visitor gets one
-            dark frame and a flash. */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html:
-              "try{if(localStorage.getItem('it.theme')==='light')document.documentElement.dataset.theme='light'}catch(e){}",
-          }}
-        />
-      </head>
+    {/* No theme script: this site has no toggle, so the localStorage read
+        copied over from day 2 was dead code — and it made the privacy line
+        untrue for no benefit. */}
+    <html lang="en" data-theme="dark">
       <body className="min-h-dvh antialiased">
         {children}
         <Analytics />
