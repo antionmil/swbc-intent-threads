@@ -48,6 +48,13 @@ export default async function Find({
   const hidden = weak.length - Math.min(6, weak.length);
   const exact = all.filter((h) => band(all, h) === "strong").length;
 
+  /* Nothing strong means nothing. The count of everything that shares a word
+     is not a count of people who want your product, and printing "60 people
+     asked for something like this" above six coincidences is the site lying
+     about its own results — a hackathon page got exactly that, over a comment
+     about entering tunnels in a game. */
+  const nothingReal = strong.length === 0;
+
   return (
     <main className="mx-auto w-full max-w-3xl px-5 pt-10 pb-20 sm:px-6">
       <Link href="/" className="text-sm text-muted underline underline-offset-4 hover:text-accent">
@@ -76,14 +83,28 @@ export default async function Find({
         </p>
       </header>
 
-      {hits.length === 0 ? (
-        <Empty host={read.host} />
+      {hits.length === 0 || nothingReal ? (
+        <Empty host={read.host} closest={hits.slice(0, 4)} />
       ) : (
         <>
-          <p className="mt-7 text-sm text-muted">
-            <span className="text-ink">{all.length} people</span> asked for something like
-            this{exact > 0 && <> · <span className="text-good">{exact} worth reading first</span></>}
-          </p>
+          {/* Three states, because there are three truths. Something strong;
+              nothing strong but some overlap, which is worth saying out loud
+              rather than dressing up; and nothing, handled above. */}
+          {exact > 0 ? (
+            <p className="mt-7 text-sm text-muted">
+              <span className="text-ink">
+                {strong.length} {strong.length === 1 ? "person" : "people"}
+              </span>{" "}
+              asked for something like this ·{" "}
+              <span className="text-good">{exact} worth reading first</span>
+            </p>
+          ) : (
+            <p className="mt-7 max-w-prose text-sm text-muted">
+              <span className="text-ink">Nothing here is a strong match.</span> These{" "}
+              {strong.length} share vocabulary with your page, but none of them is
+              clearly asking for what you built.
+            </p>
+          )}
           <ol className="mt-4">
             {hits.map((h) => (
               <LeadRow key={h.lead.id} hit={h} band={band(hits, h)} />
@@ -107,16 +128,30 @@ export default async function Find({
   );
 }
 
-function Empty({ host }: { host: string }) {
+function Empty({ host, closest = [] }: { host: string; closest?: Hit[] }) {
   return (
     <div className="mt-10">
-      <h2 className="text-xl font-semibold tracking-tight">Nobody in here asked for this yet.</h2>
+      <h2 className="text-xl font-semibold tracking-tight">Nobody in here asked for this.</h2>
       <p className="prose-tight mt-3 max-w-prose text-body">
-        That is a real answer, not an error. The bank holds public asks from Hacker News
-        and GitHub, and none of them use the vocabulary on {host}. Either you are early,
-        or the words on your page are not the words your customers would use.
+        That is a real answer, not an error. Nothing in the bank is about what{" "}
+        {host} does. Either you are early, the words on your page are not the words
+        your customers would use, or what you built is not the kind of thing people
+        ask strangers for.
       </p>
-      <p className="mt-5">
+      {closest.length > 0 && (
+        <>
+          <p className="mt-8 text-sm text-muted">
+            The nearest things we have. None of these is a match — they share a word
+            with you, not a need.
+          </p>
+          <ol className="mt-3 opacity-60">
+            {closest.map((h) => (
+              <LeadRow key={h.lead.id} hit={h} band="loose" />
+            ))}
+          </ol>
+        </>
+      )}
+      <p className="mt-8">
         <Link href="/bank" className="text-sm text-accent underline underline-offset-4">
           Browse what people are asking for →
         </Link>

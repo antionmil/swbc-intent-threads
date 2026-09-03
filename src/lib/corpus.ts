@@ -29,13 +29,36 @@ for (const l of LEADS) for (const t of l.t) DF.set(t, (DF.get(t) ?? 0) + 1);
 const N = LEADS.length;
 export const idf = (t: string) => Math.log(1 + N / (1 + (DF.get(t) ?? 0)));
 
+/* Common English, held out of matching entirely.
+ *
+ * IDF alone cannot do this job on a corpus this size: it measures rarity HERE,
+ * not whether a word carries meaning. In 1,905 leads "enter" scores 5.61 and
+ * "goes" 5.36 — both higher than "scheduling" at 5.25 — so a hackathon page
+ * saying "free to enter" matched a comment about entering tunnels in a game.
+ * Rarity in a small corpus is mostly an accident of sample size, and ordinary
+ * verbs are exactly where it misleads. */
 const STOP = new Set(
-  ("a an the and or but if then than that this these those is are was were be been being have has had do does did " +
-   "for to of in on at by with from as it its you your we our they their i me my not no so such can could would " +
-   "should will just about into over under out up down more most other some any each which who what when where why " +
-   "how all both few own same too very use using used get make made like want need way thing really much also even " +
-   "still back new good great best better able free open source software product tool app page site website home " +
-   "pricing features docs blog login sign up start get started learn more contact about us privacy terms cookie")
+  ("a about above across after again against all almost alone along already also although always am among an and " +
+   "another any anyone anything are around as at away back be became because become been before began behind being " +
+   "below beside best better between beyond big both but by came can cannot come comes coming could did different " +
+   "do does doing done down during each early either else end enough enter entered enters even ever every everyone " +
+   "everything except far few find finds first for found from full further gave get gets getting give given gives " +
+   "go goes going gone good got great had half has have having he her here hers herself him himself his how however " +
+   "i if in indeed inside instead into is it its itself just keep kept know known large last later least leave left " +
+   "less let like likely little long look looking lot made make makes making many may maybe me mean means might mine " +
+   "more most much must my myself near need needed needs neither never new next no none nor not nothing now of off " +
+   "often on once one only onto or other others otherwise our ours out over own part per perhaps place put quite " +
+   "rather really right run said same saw say says see seem seems seen set several shall she should show shows since " +
+   "small so some someone something sometimes soon still such sure take taken takes than that the their them then " +
+   "there these they thing things think this those though three through thus time to together too took toward turn " +
+   "two under until up upon us use used uses using usually very want wanted wants was way ways we well went were " +
+   "what when where whether which while who whole whom whose why will with within without work working works would " +
+   "yet you your yours " +
+   // words every landing page and every ask contains, which say nothing
+   "free open source software product tool app apps page site website home pricing price features feature docs blog " +
+   "login signup start started learn contact privacy terms cookie team teams user users customer customers business " +
+   "solution solutions platform service services simple easy fast better best help support build built building " +
+   "create created creates add added adding change changed try tried trying works working thanks thank hello hey")
     .split(" "),
 );
 
@@ -75,6 +98,22 @@ export function rank(queryTerms: string[], limit = 24, over: Lead[] = LEADS): Hi
     .slice(0, 16);
   if (qTerms.length === 0) return [];
 
+  /* What the page is ABOUT, as opposed to what it merely contains.
+   *
+   * A match has to touch one of these or it does not count. Without it, a
+   * vibecoding hackathon matched a comment about entering tunnels in a game,
+   * on the shared words "enter" and "goes" — the page did contain them, but
+   * the page is about a hackathon. The subject words here were "hackathon",
+   * "vibecoding" and "prize", none of which appear anywhere in the corpus, and
+   * the honest answer in that case is that nobody has asked for this. */
+  const core = new Set(
+    [...q.entries()]
+      .filter(([t]) => (DF.get(t) ?? 0) > 0)
+      .sort((a, b) => b[1] - a[1] || idf(b[0]) - idf(a[0]))
+      .slice(0, 8)
+      .map(([t]) => t),
+  );
+
   /* Term frequency on the product's own page, log-damped. This was missing and
      it was the whole bug: Plausible's page says "ditch Google Analytics" once
      and "analytics" twenty times, but IDF alone scored `ditch` and `analytics`
@@ -89,6 +128,7 @@ export function rank(queryTerms: string[], limit = 24, over: Lead[] = LEADS): Hi
     const set = new Set(lead.t);
     const shared = qTerms.filter((t) => set.has(t));
     if (shared.length === 0) continue;
+    if (!shared.some((t) => core.has(t))) continue;
     /* Only the three rarest shared terms count. Summing all of them let a lead
        that happened to share eight generic words — tool, app, data, way — beat
        one that shared the single word the product is actually about. In this
