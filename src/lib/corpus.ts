@@ -72,7 +72,14 @@ export function rank(queryTerms: string[], limit = 24): Hit[] {
     .slice(0, 16);
   if (qTerms.length === 0) return [];
 
-  const norm = Math.sqrt(qTerms.reduce((a, t) => a + idf(t) ** 2, 0)) || 1;
+  /* Term frequency on the product's own page, log-damped. This was missing and
+     it was the whole bug: Plausible's page says "ditch Google Analytics" once
+     and "analytics" twenty times, but IDF alone scored `ditch` and `analytics`
+     identically because both are rare HERE. Rarity says a word is
+     informative; frequency says the page is about it. You need both. */
+  const tf = (t: string) => 1 + Math.log(1 + (q.get(t) ?? 0));
+  const w = (t: string) => idf(t) * tf(t);
+  const norm = Math.sqrt(qTerms.reduce((a, t) => a + w(t) ** 2, 0)) || 1;
   const out: Hit[] = [];
 
   for (const lead of LEADS) {
@@ -84,10 +91,14 @@ export function rank(queryTerms: string[], limit = 24): Hit[] {
        one that shared the single word the product is actually about. In this
        corpus "tool" carries an IDF of 1.26 and "analytics" carries 5.83, so
        breadth of vocabulary is mostly noise and rarity is the whole signal. */
-    const best = shared.map(idf).sort((a, b) => b - a).slice(0, 3);
+    const best = shared.map(w).sort((a, b) => b - a).slice(0, 3);
     const overlap = best.reduce((a, v) => a + v, 0) / norm;
     const breadth = Math.sqrt(Math.min(shared.length, 4));
-    out.push({ lead, score: overlap * breadth * lead.score, shared });
+    /* Quality tilts, it does not decide. Multiplying by the raw score let a
+       tidy-looking ask with a weak term match outrank the person who used the
+       product's actual vocabulary. */
+    const quality = 0.55 + 0.45 * lead.score;
+    out.push({ lead, score: overlap * breadth * quality, shared });
   }
   out.sort((a, b) => b.score - a.score);
 
@@ -111,6 +122,8 @@ export function rank(queryTerms: string[], limit = 24): Hit[] {
 export function why(h: Hit, n = 2): string[] {
   return [...h.shared].sort((a, b) => idf(b) - idf(a)).slice(0, n);
 }
+
+/** Rank against a product read, keeping its term frequencies. */
 
 /** How much weight to give the row, from the rarity of what it shares. */
 export function band(hits: Hit[], h: Hit): "strong" | "worth a look" | "loose" {
