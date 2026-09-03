@@ -3,8 +3,9 @@ import { LeadRow } from "@/components/LeadRow";
 import { band, rank } from "@/lib/corpus";
 import { normalise, readProduct } from "@/lib/product";
 
-/* One fetch of somebody else's page per view, so this cannot be prerendered —
-   but it also must not be cached per URL forever, since the corpus moves. */
+/* Cannot be prerendered — the URL is only known at request time — but the
+   result IS cacheable: it is a pure function of the pasted URL and the corpus,
+   the same for every visitor. See next.config.ts for why that matters. */
 export const dynamic = "force-dynamic";
 
 export default async function Find({
@@ -120,7 +121,11 @@ function Unreadable({ given, why }: { given: string; why: string }) {
   return (
     <main className="mx-auto w-full max-w-2xl px-5 pt-16 pb-20 sm:px-6">
       <p className="text-[11px] tracking-[0.2em] text-faint uppercase">Could not read it</p>
-      <h1 className="mt-4 text-3xl leading-tight font-semibold tracking-tight">{why}</h1>
+      {/* Announced, not merely shown. Without this a screen reader user gets a
+          new page with no signal that anything went wrong. */}
+      <h1 role="alert" className="mt-4 text-3xl leading-tight font-semibold tracking-tight">
+        {why}
+      </h1>
       {given && <p className="mt-3 font-mono text-sm break-all text-muted">{given}</p>}
       <p className="prose-tight mt-5 max-w-prose text-body">
         Try the exact URL of the page that says what you built — a landing page or a

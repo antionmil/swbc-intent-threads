@@ -46,7 +46,12 @@ export default function Home() {
 
       <p className="mt-5 text-xs text-faint">
         {total.toLocaleString()} public asks indexed · {fresh} from the last 7 days ·
-        newest {newest} · no sign-up, nothing stored
+        newest {newest}
+      </p>
+      <p className="mt-2 text-xs text-faint">
+        No sign-up and no account. We do not store the address you paste — it is read
+        once, matched, and gone. Page views are counted by Vercel Analytics, which sets
+        no cookie.
       </p>
 
       <section className="mt-16 border-t border-rule pt-10">
@@ -61,6 +66,19 @@ export default function Home() {
           Reddit is not in here: its public API returns 403 unauthenticated and the free
           tier is non-commercial. 4chan is not either — 1% of posters have a name, so
           there is nobody to write to.
+        </p>
+        <p className="prose-tight mt-3 max-w-prose text-sm text-muted">
+          If one of these is you and you would rather not be here, say so and it
+          comes out — every ask under that name, on the next rebuild, no questions.{" "}
+          <a
+            href="https://github.com/antionmil/swbc-intent-threads/issues/new?title=Please+remove+me&body=Your+handle+or+the+link+to+your+comment%3A"
+            target="_blank"
+            rel="noopener nofollow"
+            className="underline underline-offset-4 hover:text-accent"
+          >
+            Ask us to remove you
+          </a>
+          .
         </p>
         <p className="mt-6">
           <Link href="/bank" className="text-sm text-accent underline underline-offset-4">

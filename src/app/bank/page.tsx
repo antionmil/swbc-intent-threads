@@ -54,6 +54,15 @@ export default function Bank() {
               >
                 reply ↗
               </a>
+              <span aria-hidden>·</span>
+              <a
+                href="https://github.com/antionmil/swbc-intent-threads/issues/new?title=Please+remove+me&body=Your+handle+or+the+link+to+your+comment%3A"
+                target="_blank"
+                rel="noopener nofollow"
+                className="text-faint underline underline-offset-4 hover:text-accent"
+              >
+                remove me
+              </a>
             </p>
           </li>
         ))}

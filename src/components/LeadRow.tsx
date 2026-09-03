@@ -63,14 +63,26 @@ export function LeadRow({ hit, band }: { hit: Hit; band: keyof typeof TONE }) {
         </p>
       </div>
 
-      <a
-        href={lead.url}
-        target="_blank"
-        rel="noopener nofollow"
-        className="mt-0.5 h-fit shrink-0 rounded-full border border-edge px-4 py-1.5 text-sm text-body transition-colors hover:border-accent hover:text-accent"
-      >
-        reply ↗
-      </a>
+      <span className="mt-0.5 flex h-fit shrink-0 flex-col items-end gap-1.5">
+        <a
+          href={lead.url}
+          target="_blank"
+          rel="noopener nofollow"
+          className="rounded-full border border-edge px-4 py-1.5 text-sm text-body transition-colors hover:border-accent hover:text-accent"
+        >
+          reply ↗
+        </a>
+        {/* On the row itself, not buried in a footer. This is somebody's name
+            and words, in front of a stranger who is about to message them. */}
+        <a
+          href={"https://github.com/antionmil/swbc-intent-threads/issues/new?title=Please+remove+me&body=Your+handle+or+the+link+to+your+comment%3A"}
+          target="_blank"
+          rel="noopener nofollow"
+          className="text-[11px] text-faint underline underline-offset-2 hover:text-accent"
+        >
+          this is me, remove it
+        </a>
+      </span>
     </li>
   );
 }
