@@ -1,67 +1,62 @@
-# SWBC scaffold
+# Intent threads
 
-The template every build day starts from. Make this a GitHub **template
-repository**: each morning, "Use this template" gives a fresh repo, import it
-to Vercel, and hour zero already has the boring part done.
+> Paste your product. Find the strangers who already asked for it in public,
+> and where to go and say hello.
 
-## Do not remove the `packageManager` pin
+Day 3 of a 26-day [one-website-a-day run](https://onedaybuilt.com).
 
-`package.json` pins `pnpm@10.18.0`. Without it Vercel infers a pnpm version
-from the lockfile format, and on day 1 that guess produced
-`Command "pnpm install" exited with 1` on a repository where a clean
-`pnpm install --frozen-lockfile` succeeded locally every time. Two deploys
-were silently lost to it before the cause was found.
+## What it is
 
-`pnpm.onlyBuiltDependencies` is there for the same reason: pnpm 10 refuses to
-run a dependency's build scripts unless they are named. Locally that is a
-warning. On CI it can be an error.
+Every row is one person, in public, saying they wanted something that did not
+exist for them yet — mined from Hacker News comments and GitHub issue bodies.
+Their words, their name, their link. You paste a product URL; the site reads
+what that page says it does and ranks the corpus against it.
 
-## First-time setup (once)
+## Three decisions worth writing down
 
-1. `pnpm install`
-2. Create a Neon project (free plan: 100 projects, 0.5 GB each) and copy the
-   connection string.
-3. `cp .env.example .env.local` and fill it in.
-4. `pnpm db:push` to create the tables.
-5. `pnpm dev`
+- **No database.** The corpus is identical for every visitor, so it ships as a
+  static artifact and the search runs in memory. Neon scales to zero after five
+  minutes idle and a cold query would have been the slowest thing on the page.
 
-## Per build day
+- **No model in the request path.** A product page states what it does in its
+  title, meta description and first heading — that is what those elements are
+  for. Reading them is free, instant, and cannot invent a description of
+  somebody's business.
 
-1. "Use this template" on GitHub.
-2. Change **one file** to give the site its identity: `src/app/globals.css`.
-   Swap `--color-accent` and `--color-ground`. Do not build a shared design
-   system - 26 identical sites read as a template farm.
-3. Replace `src/app/page.tsx`.
-4. Point a wildcard subdomain at it. Never buy a domain on a build day.
+- **The badge is evidence, not a verdict.** An earlier build labelled rows
+  "exact match". Tested against real products that was right about half the
+  time, so it was lying to every other reader. Each row now shows the rare word
+  the two pages share — `analytics`, `bookmarks` — which is a fact the reader
+  can check in one glance.
 
-## What is wired
+## Sources, and the ones rejected
 
-| Thing | Where | Why it is here |
-|---|---|---|
-| `getOrCompute(key, ttl, fn)` | `src/lib/cache.ts` | Makes "no LLM in the request path" true rather than aspirational |
-| `complete()` / `batchSubmit()` | `src/lib/llm.ts` | Haiku for scoring, Sonnet for prose. Input hash is the cache key, so URL tools dedupe for free |
-| `checkGate(req)` | `src/lib/ratelimit.ts` | Per-IP limit **and** a global daily ceiling |
-| `<Exhausted />` | `src/components/` | The state you will not have time to design on a viral day |
-| `/api/og` | `src/app/api/og/` | Share images. **The font problem is already solved** |
-| `/r/[id]` | `src/app/r/` | Shareable results with no auth anywhere in the system |
-| `/api/submit` | `src/app/api/submit/` | Unauthenticated submissions, honeypot + time-on-form |
-| `/api/cron/[job]` | `src/app/api/cron/` | Secret-gated. Jobs end by writing an artifact |
-| `writeArtifact()` | `src/lib/artifact.ts` | Static reads. Neon scales to zero after 5 min and you cannot disable it |
-| `<SponsorSlot />` | `src/components/` | Env-driven. Renders an honest placeholder until a sponsor exists |
+| source | status |
+|---|---|
+| GitHub issue bodies | ~50k matches on three phrases, dated to today, every asker reachable |
+| Hacker News comments | fewer, but whole-product asks rather than in-repo feature requests |
+| Reddit | **rejected** — public JSON returns 403 unauthenticated; free tier is non-commercial and needs pre-approval |
+| 4chan | **rejected** — 1% of posters have a name, so there is nobody to write to |
+| Stack Overflow | **rejected** — closes tool-recommendation questions by policy |
+| Software Recommendations SE | **rejected** — 617 of its 800 questions are from 2014; dead since 2016 |
 
-## Three traps already paid for
+## Ranking, in one paragraph
 
-1. **OG fonts.** `ImageResponse` cannot use a CSS font-family and a modern
-   user-agent gets woff2, which it cannot read. `src/app/api/og/route.tsx`
-   spoofs an old UA to get a TTF and memoises it. Verified: 111 KB TTF.
-2. **The rate limiter needs a unique key.** `events.bucket` is the PRIMARY
-   KEY. Without that there is no conflict to catch, every count returns 1, and
-   both limits silently never fire.
-3. **Cold Postgres.** Anything precomputed must be read from an artifact, not
-   queried on the request path.
+Term overlap weighted by inverse document frequency, where only the three
+rarest shared words count. In this corpus `tool` carries an IDF of 1.26 and
+`analytics` carries 5.83, so breadth of shared vocabulary is mostly noise and
+rarity is the whole signal. Query terms are filtered to words the corpus has
+actually seen — sorting by IDF alone promoted `cookieless` and `self-hostable`,
+which score highest and can never match anything.
 
-## Deploy
+## Running it
 
-Vercel **Pro**, not Hobby. Hobby's terms name advertisements as commercial
-use, sponsor slots are advertisements, and Vercel may suspend commercial
-projects on Hobby without notice.
+```bash
+pnpm install
+pnpm dev
+```
+
+`prep/mine_github.py` fills `prep/corpus_github.jsonl`; `prep/build_corpus.py`
+turns that plus the Hacker News rows into `src/data/corpus.json`.
+`GITHUB_TOKEN` is optional and only raises the search API from 10 to 30
+requests a minute.

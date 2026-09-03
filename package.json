@@ -1,5 +1,5 @@
 {
-  "name": "swbc-scaffold",
+  "name": "intent-threads",
   "version": "1.0.0",
   "private": true,
   "packageManager": "pnpm@10.18.0",
@@ -14,13 +14,11 @@
     "dev:webpack": "NODE_OPTIONS=--max-old-space-size=2048 next dev --webpack"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.122.0",
-    "@neondatabase/serverless": "^1.0.2",
     "@vercel/analytics": "^2.0.1",
-    "drizzle-orm": "^0.44.6",
     "next": "16.1.6",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "server-only": "^0.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.14",

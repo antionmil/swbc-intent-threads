@@ -1,0 +1,147 @@
+import Link from "next/link";
+import { LeadRow } from "@/components/LeadRow";
+import { band, rank } from "@/lib/corpus";
+import { normalise, readProduct } from "@/lib/product";
+
+/* One fetch of somebody else's page per view, so this cannot be prerendered —
+   but it also must not be cached per URL forever, since the corpus moves. */
+export const dynamic = "force-dynamic";
+
+export default async function Find({
+  searchParams,
+}: {
+  searchParams: Promise<{ url?: string }>;
+}) {
+  const { url } = await searchParams;
+  const clean = normalise(url ?? "");
+  /* Unreadable is a state with its own page, not a bounce back to the form with
+     a query string — that would make the home page dynamic for everyone in
+     order to serve a message to one person. */
+  if (!clean) return <Unreadable given={url ?? ""} why="That does not look like a web address." />;
+
+  const read = await readProduct(clean);
+  if (!read) {
+    return (
+      <Unreadable
+        given={clean}
+        why="We could not fetch that page, or it did not return HTML. Some sites block anything that is not a browser."
+      />
+    );
+  }
+
+  const all = rank(read.terms, 60);
+  /* Strong first, and only a taste of the tail. With a corpus this size most
+     products have one real match and a long shadow of near-misses; showing all
+     of them buries the one that matters and makes the good one look like noise. */
+  const strong = all.filter((h) => band(all, h) !== "loose");
+  const weak = all.filter((h) => band(all, h) === "loose");
+  const hits = [...strong, ...weak.slice(0, 6)];
+  const hidden = weak.length - Math.min(6, weak.length);
+  const exact = all.filter((h) => band(all, h) === "strong").length;
+
+  return (
+    <main className="mx-auto w-full max-w-3xl px-5 pt-10 pb-20 sm:px-6">
+      <Link href="/" className="text-sm text-muted underline underline-offset-4 hover:text-accent">
+        ← Try another
+      </Link>
+
+      <header className="mt-7 border-b border-rule pb-6">
+        <p className="text-[11px] tracking-[0.2em] text-faint uppercase">We read your page as</p>
+        <h1 className="mt-2 text-2xl leading-snug font-semibold tracking-tight sm:text-3xl">
+          {read.title}
+        </h1>
+        {read.blurb && <p className="prose-tight mt-2 max-w-prose text-body">{read.blurb}</p>}
+        <p className="mt-4 flex flex-wrap gap-1.5">
+          {read.weighted.slice(0, 12).map((t) => (
+            <span key={t} className="rounded-full border border-rule px-2.5 py-1 font-mono text-xs text-muted">
+              {t}
+            </span>
+          ))}
+        </p>
+        {/* The ranking is term overlap, so the terms have to be visible. If we
+            read the product wrong, the reader can see that immediately rather
+            than wondering why the results are odd. */}
+        <p className="mt-3 text-xs text-faint">
+          These are the words we matched on. Wrong? Point us at the page that describes
+          what you built.
+        </p>
+      </header>
+
+      {hits.length === 0 ? (
+        <Empty host={read.host} />
+      ) : (
+        <>
+          <p className="mt-7 text-sm text-muted">
+            <span className="text-ink">{all.length} people</span> asked for something like
+            this{exact > 0 && <> · <span className="text-good">{exact} worth reading first</span></>}
+          </p>
+          <ol className="mt-4">
+            {hits.map((h) => (
+              <LeadRow key={h.lead.id} hit={h} band={band(hits, h)} />
+            ))}
+          </ol>
+          {hidden > 0 && (
+            <p className="mt-5 text-sm text-muted">
+              {hidden} weaker {hidden === 1 ? "match" : "matches"} not shown — they shared
+              a word with you, not a need.
+            </p>
+          )}
+          <p className="mt-8 text-xs text-faint">
+            The tag on each row is the rare word you and they both used — that is a
+            fact, not a judgement, so you can see in a glance whether it is relevant.
+            Ranked by how uncommon those shared words are, and by whether the ask reads
+            like a person wanting a product rather than someone stuck on a bug.
+          </p>
+        </>
+      )}
+    </main>
+  );
+}
+
+function Empty({ host }: { host: string }) {
+  return (
+    <div className="mt-10">
+      <h2 className="text-xl font-semibold tracking-tight">Nobody in here asked for this yet.</h2>
+      <p className="prose-tight mt-3 max-w-prose text-body">
+        That is a real answer, not an error. The bank holds public asks from Hacker News
+        and GitHub, and none of them use the vocabulary on {host}. Either you are early,
+        or the words on your page are not the words your customers would use.
+      </p>
+      <p className="mt-5">
+        <Link href="/bank" className="text-sm text-accent underline underline-offset-4">
+          Browse what people are asking for →
+        </Link>
+      </p>
+    </div>
+  );
+}
+
+function Unreadable({ given, why }: { given: string; why: string }) {
+  return (
+    <main className="mx-auto w-full max-w-2xl px-5 pt-16 pb-20 sm:px-6">
+      <p className="text-[11px] tracking-[0.2em] text-faint uppercase">Could not read it</p>
+      <h1 className="mt-4 text-3xl leading-tight font-semibold tracking-tight">{why}</h1>
+      {given && <p className="mt-3 font-mono text-sm break-all text-muted">{given}</p>}
+      <p className="prose-tight mt-5 max-w-prose text-body">
+        Try the exact URL of the page that says what you built — a landing page or a
+        README works better than a dashboard behind a login.
+      </p>
+      <form action="/find" className="mt-7 flex flex-col gap-3 sm:flex-row">
+        <input
+          name="url" type="text" inputMode="url" required autoFocus
+          defaultValue={given} placeholder="yourproduct.com"
+          aria-label="Your product's web address"
+          className="min-w-0 flex-1 rounded-xl border border-edge bg-surface px-4 py-3.5 font-mono text-ink outline-none placeholder:text-faint focus:border-accent"
+        />
+        <button className="rounded-xl bg-accent px-7 py-3.5 text-sm font-medium text-ground">
+          Try again
+        </button>
+      </form>
+      <p className="mt-6">
+        <Link href="/" className="text-sm text-muted underline underline-offset-4 hover:text-accent">
+          ← Back
+        </Link>
+      </p>
+    </main>
+  );
+}
