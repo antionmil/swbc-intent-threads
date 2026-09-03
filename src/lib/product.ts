@@ -29,11 +29,20 @@ export function normalise(input: string): string | null {
     if (p.protocol !== "https:" && p.protocol !== "http:") return null;
     /* No internal addresses. This fetches a URL a stranger supplied, so it must
        never be usable to probe the network the function runs in. */
-    const h = p.hostname.toLowerCase();
+    const h = p.hostname.toLowerCase().replace(/^\[|\]$/g, "");
     if (h === "localhost" || h.endsWith(".localhost") || h.endsWith(".internal") ||
-        /^\d+\.\d+\.\d+\.\d+$/.test(h) || h.endsWith(".local")) return null;
+        h.endsWith(".local") || h.endsWith(".arpa") || h === "metadata.goog") return null;
+    /* Literal addresses, v4 and v6. A hostname that RESOLVES to a private range
+       is still reachable — closing that needs DNS resolution before the fetch,
+       which is a real gap and is written down rather than glossed over. */
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) return null;
+    if (h.includes(":")) return null;              // any IPv6 literal
+    if (!h.includes(".")) return null;             // bare hostnames are internal
     return p.toString();
   } catch { return null; }
+}
+
+function _unused() {
 }
 
 export async function readProduct(url: string): Promise<Read | null> {
@@ -41,16 +50,38 @@ export async function readProduct(url: string): Promise<Read | null> {
   const timer = setTimeout(() => ctl.abort(), 8000);
   let html = "";
   try {
-    const r = await fetch(url, {
-      signal: ctl.signal, redirect: "follow",
-      headers: { "user-agent": "Mozilla/5.0 (compatible; intentthreads/1.0; +https://intentthreads.onedaybuilt.com)" },
-    });
-    if (!r.ok) return null;
-    const type = r.headers.get("content-type") ?? "";
+    /* Redirects are followed BY HAND, and every hop goes back through
+       normalise(). Following automatically meant the address bar check could be
+       passed with a public hostname that then 302s to 169.254.169.254 — the
+       block would have been decoration. Three hops is more than any real
+       product page needs. */
+    let target: string | null = url;
+    let res: Response | null = null;
+    for (let hop = 0; hop < 4 && target; hop++) {
+      const r: Response = await fetch(target, {
+        signal: ctl.signal,
+        redirect: "manual",
+        headers: {
+          "user-agent":
+            "Mozilla/5.0 (compatible; intentthreads/1.0; +https://intentthreads.onedaybuilt.com)",
+        },
+      });
+      if (r.status >= 300 && r.status < 400) {
+        const loc = r.headers.get("location");
+        if (!loc) return null;
+        target = normalise(new URL(loc, target).toString());
+        if (!target) return null;      // redirected somewhere we will not go
+        continue;
+      }
+      res = r;
+      break;
+    }
+    if (!res || !res.ok) return null;
+    const type = res.headers.get("content-type") ?? "";
     if (!type.includes("html")) return null;
     /* Cap the read. A product page is a few hundred KB; anything far past that
        is not a product page and should not be parsed on our clock. */
-    html = (await r.text()).slice(0, 600_000);
+    html = (await res.text()).slice(0, 600_000);
   } catch {
     return null;
   } finally {
