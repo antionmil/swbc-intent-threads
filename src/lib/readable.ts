@@ -22,6 +22,12 @@ export function readable(s: string): string {
     .replace(/```[\s\S]*?```/g, " ")                        // fenced code blocks
     .replace(/```/g, " ")                                   // an unclosed fence
     .replace(new RegExp(`</?(?:${TAGS})(?:\\s[^<>]*)?/?>`, "gi"), " ")
+    /* An unterminated tag: the miner's cut landed inside the attributes, so
+       there is no ">" for the rule above to find and the whole
+       `<img width="228" height="364" alt` sat on the page. The first sweep for
+       leftovers missed these too — it also required the closing bracket, so the
+       check shared the blind spot of the fix and reported zero. */
+    .replace(new RegExp(`<(?:${TAGS})\\b[^<>]*$`, "i"), " ")
     .replace(/!\[[^\]]*\]\([^)]*\)/g, " ")                  // markdown images
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")                // links: keep the words
     /* An orphan: the miner's character limit cut the "[" off the front, leaving
