@@ -38,7 +38,13 @@ export function Feed({ initial }: { initial: Row[] }) {
   useEffect(() => {
     let dead = false;
     const tick = async () => {
-      if (document.visibilityState !== "visible") return;
+      /* No visibilityState guard. The first draft skipped hidden tabs, which
+         browsers already handle — a background tab's intervals are throttled to
+         roughly once a minute on their own. So the guard bought nothing, made a
+         reader who comes back to the tab wait up to another 45 seconds for the
+         arrivals that were already waiting, and made the whole feature
+         impossible to exercise: every browser available for testing here reports
+         the document hidden, so the poll never ran once outside production. */
       try {
         const r = await fetch(`/api/feed?since=${encodeURIComponent(since.current)}&limit=10`);
         const d = (await r.json()) as { rows: Row[]; now: string };
