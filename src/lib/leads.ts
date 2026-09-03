@@ -89,6 +89,18 @@ export async function count(): Promise<number> {
 
 export const total = unstable_cache(count, ["lead-count"], { revalidate: 300 });
 
+/* One person can post the same thought twice, a character apart — a ">" that
+   became a "→" made two rows out of one and put both at the top of the bank.
+   Keyed on letters and digits only so that difference stops mattering. Cheap,
+   and it runs where leads are produced rather than on each page. */
+function dedupe(rows: Lead[]): Lead[] {
+  const seen = new Set<string>();
+  return rows.filter((l) => {
+    const k = l.who + "|" + l.wish.toLowerCase().replace(/[^a-z0-9]+/g, "").slice(0, 90);
+    return seen.has(k) ? false : (seen.add(k), true);
+  });
+}
+
 /** Newest first, for the bank. */
 export async function recent(limit = 250): Promise<Lead[]> {
   if (!hasDb()) return BUNDLED.slice(0, limit);
@@ -101,7 +113,7 @@ export async function recent(limit = 250): Promise<Lead[]> {
        order by l.asked_on desc nulls last, l.score desc
        limit ${limit}
     `) as unknown as Row[];
-    return rows.length ? rows.map(toLead) : BUNDLED.slice(0, limit);
+    return rows.length ? dedupe(rows.map(toLead)) : BUNDLED.slice(0, limit);
   } catch (e) {
     console.error("[leads] recent failed, falling back", e);
     return BUNDLED.slice(0, limit);

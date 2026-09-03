@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { LEADS } from "@/lib/corpus";
+import { recent, total } from "@/lib/leads";
 import { Face } from "@/components/Face";
 
 export const revalidate = 3600;
@@ -21,10 +21,12 @@ export const metadata: Metadata = {
 
 /* The whole corpus, newest first, best-scoring first within a day. Static: the
    same page for everybody, so it has no business being computed per request. */
-export default function Bank() {
-  const rows = [...LEADS]
-    .sort((a, b) => (b.when ?? "").localeCompare(a.when ?? "") || b.score - a.score)
-    .slice(0, 250);
+/* Reads the database, like the front page does. It used to read the bundled
+   artifact and so announced 1,905 asks while the home page said 1,931 — two
+   different numbers for the same thing, on the same site. Still static: this is
+   the same page for everybody, revalidated hourly. */
+export default async function Bank() {
+  const [rows, count] = await Promise.all([recent(250), total()]);
 
   return (
     <main className="mx-auto w-full max-w-3xl px-5 pt-10 pb-20 sm:px-6">
@@ -35,12 +37,12 @@ export default function Bank() {
       <header className="mt-7">
         <h1 className="text-3xl leading-tight font-semibold tracking-tight sm:text-4xl">The bank</h1>
         <p className="prose-tight mt-4 max-w-prose text-lg leading-relaxed text-body">
-          {LEADS.length.toLocaleString()} times somebody said in public that they wanted
+          {count.toLocaleString()} times somebody said in public that they wanted
           something. Newest first. If one of them describes a thing you could build, the
           person who wants it is one click away.
         </p>
         <p className="prose-tight mt-3 max-w-prose text-sm text-muted">
-          Showing the {Math.min(250, LEADS.length)} most recent. Paste a product on the
+          Showing the {Math.min(250, rows.length).toLocaleString()} most recent. Paste a product on the
           front page to see only the ones that match it.
         </p>
       </header>
