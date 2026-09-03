@@ -42,9 +42,6 @@ export function normalise(input: string): string | null {
   } catch { return null; }
 }
 
-function _unused() {
-}
-
 export async function readProduct(url: string): Promise<Read | null> {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 8000);
