@@ -12,8 +12,11 @@ import raw from "@/data/corpus.json";
  * the person's own words, highlighted, which is verifiable instead.
  */
 export type Lead = {
-  id: string; src: "hn" | "github"; who: string; repo: string;
+  id: string; src: "hn" | "github" | "youtube"; who: string; repo: string;
   when: string; wish: string; url: string; score: number; t: string[];
+  /** The video a YouTube comment sits under. Without it the comment is not
+   *  legible — and it is where the matched terms came from. */
+  ctx?: string;
 };
 
 export const LEADS = raw as Lead[];

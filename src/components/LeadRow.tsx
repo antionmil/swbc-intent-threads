@@ -29,7 +29,10 @@ const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 export function LeadRow({ hit, band }: { hit: Hit; band: keyof typeof TONE }) {
   const { lead, shared } = hit;
-  const where = lead.src === "github" ? lead.repo || "GitHub" : "Hacker News";
+  const where =
+    lead.src === "github" ? lead.repo || "GitHub"
+    : lead.src === "youtube" ? "YouTube"
+    : "Hacker News";
   /* The badge is the evidence, not a verdict: the rare words this person and
      your product both used. */
   const on = why(hit);
@@ -47,6 +50,14 @@ export function LeadRow({ hit, band }: { hit: Hit; band: keyof typeof TONE }) {
         <p className="prose-tight leading-relaxed text-body">
           <Marked text={lead.wish} shared={shared} />
         </p>
+        {/* The video, not decoration: "what would you recommend for a cleaning
+            business" means nothing until you know it was asked under a video
+            about invoicing software. */}
+        {lead.ctx && (
+          <p className="mt-1.5 text-xs text-faint">
+            asked under <span className="text-muted">{lead.ctx}</span>
+          </p>
+        )}
         <p className="mt-2 font-mono text-xs text-muted">
           {lead.who} · {where} · {lead.when}
         </p>
