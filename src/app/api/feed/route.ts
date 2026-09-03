@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { hasDb, sql } from "@/lib/db";
-import { clipped } from "@/lib/readable";
+import { clipped, decode } from "@/lib/readable";
 
 export const dynamic = "force-dynamic";
 
@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
 
     const wire: Wire[] = rows.map((r) => ({
       id: String(r.id), src: String(r.src), who: String(r.who),
-      repo: r.repo ?? "", ctx: r.ctx ?? "", when: String(r.asked_on ?? ""),
+      repo: r.repo ?? "", ctx: r.ctx ? decode(r.ctx) : "", when: String(r.asked_on ?? ""),
       wish: clipped(String(r.wish)), url: String(r.url), avatar: r.avatar,
     }));
     return NextResponse.json({ rows: wire, now }, dead);

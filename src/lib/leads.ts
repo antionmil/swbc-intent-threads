@@ -1,5 +1,5 @@
 import "server-only";
-import { clipped } from "@/lib/readable";
+import { clipped, decode } from "@/lib/readable";
 import { unstable_cache } from "next/cache";
 import { hasDb, sql } from "./db";
 import type { Lead } from "./corpus";
@@ -31,7 +31,7 @@ const toLead = (r: Row): Lead => ({
      search() and recent() both caught their own crash and quietly served the
      bundled artifact instead of the database — for every visitor, invisibly.
      The query now casts with to_char; this is the belt to that pair of braces. */
-  ctx: r.ctx || undefined, when: String(r.asked_on ?? "").slice(0, 10),
+  ctx: r.ctx ? decode(r.ctx) : undefined, when: String(r.asked_on ?? "").slice(0, 10),
   wish: clipped(r.wish), url: r.url, score: r.score, avatar: r.avatar ?? undefined,
   t: [...new Set(tokenise(`${r.wish} ${r.ctx ?? ""}`))].slice(0, 44),
 });

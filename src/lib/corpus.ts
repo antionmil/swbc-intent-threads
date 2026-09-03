@@ -1,5 +1,5 @@
 import "server-only";
-import { clipped } from "@/lib/readable";
+import { clipped, decode } from "@/lib/readable";
 import raw from "@/data/corpus.json";
 
 /**
@@ -28,6 +28,7 @@ export const LEADS = (raw as Lead[]).map((l) => ({
   ...l,
   /* The artifact stores what the person typed, markdown and all. */
   wish: clipped(l.wish),
+  ctx: l.ctx ? decode(l.ctx) : undefined,
   /* A GitHub avatar is a pure function of the handle, so the bundled artifact
      gets faces too — the fallback path is not a degraded-looking page. YouTube
      avatars are per-comment and only exist in the database. */

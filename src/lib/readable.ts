@@ -16,8 +16,35 @@ const TAGS =
  * person speaking. Display-time, not mine-time, because it has to fix the 1,931
  * rows already stored as well as everything the crons add next.
  */
+const ENTITIES: Record<string, string> = {
+  amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ",
+  hellip: "\u2026", mdash: "\u2014", ndash: "\u2013", rsquo: "\u2019", lsquo: "\u2018",
+  ldquo: "\u201c", rdquo: "\u201d",
+};
+
+/**
+ * Turn `You&#39;re doing &#39;em wrong!` back into an apostrophe.
+ *
+ * YouTube hands video titles back HTML-escaped. Stored as-is and rendered by
+ * React — which escapes the ampersand again — the reader sees the entity
+ * itself. Decoding here rather than at render is deliberate: it runs BEFORE the
+ * tag rules below, so a body that arrived with its markup escaped gets stripped
+ * like any other instead of printing &lt;img …&gt; on the page. Nothing renders
+ * these strings as HTML, so decoding cannot inject anything.
+ */
+export function decode(s: string): string {
+  return s.replace(/&(#x?[0-9a-f]+|[a-z]+);/gi, (m, g: string) => {
+    const k = g.toLowerCase();
+    if (k[0] !== "#") return ENTITIES[k] ?? m;
+    const n = k[1] === "x" ? parseInt(k.slice(2), 16) : parseInt(k.slice(1), 10);
+    /* Surrogates and out-of-range code points make fromCodePoint throw. */
+    if (!Number.isFinite(n) || n <= 0 || n > 0x10ffff || (n >= 0xd800 && n <= 0xdfff)) return m;
+    return String.fromCodePoint(n);
+  });
+}
+
 export function readable(s: string): string {
-  return s
+  return decode(s)
     .replace(/<!--[\s\S]*?-->/g, " ")                       // html comments
     .replace(/```[\s\S]*?```/g, " ")                        // fenced code blocks
     .replace(/```/g, " ")                                   // an unclosed fence
