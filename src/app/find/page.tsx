@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { LeadRow } from "@/components/LeadRow";
-import { band, rank, type Hit } from "@/lib/corpus";
+import { band, expand, rank, type Hit } from "@/lib/corpus";
 import { peopleIn, search } from "@/lib/leads";
 import { normalise, readProduct } from "@/lib/product";
 
@@ -37,7 +37,10 @@ export default async function Find({
      way. The bundled artifact is the floor: if the database is cold,
      unreachable or unconfigured the page still answers, rather than rendering
      an empty result with a 200. */
-  const live = await search(read.weighted, 300);
+  /* Expanded before it reaches Postgres. Recall happens here, so a subject word
+     the product did not literally use has to be in the query or the ranker never
+     sees the lead that used it. */
+  const live = await search(expand(read.weighted), 300);
   const all: Hit[] = live?.length ? rank(read.terms, 60, live) : rank(read.terms, 60);
   /* Strong first, and only a taste of the tail. With a corpus this size most
      products have one real match and a long shadow of near-misses; showing all

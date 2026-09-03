@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Face } from "@/components/Face";
+import { TOPICS } from "@/lib/topics";
 
 export type Row = {
   id: string; src: string; who: string; ctx?: string; repo?: string;
@@ -33,6 +34,7 @@ const FILTERS = [
 ] as const;
 
 type FilterKey = (typeof FILTERS)[number]["key"];
+type TopicFilter = "all" | (typeof TOPICS)[number]["key"];
 
 /* Cut on a word where one is near, and say that it was cut. The old code sliced
    at exactly 46 characters with no mark, inventing repo names. */
@@ -70,6 +72,35 @@ function ago(d: string, nowDay: string) {
   return `${MONTHS[Number(m) - 1] ?? m} ${y}`;
 }
 
+function Chips({ label, options, value, onChange, quiet = false }: {
+  label: string;
+  options: readonly { key: string; label: string }[];
+  value: string;
+  onChange: (key: string) => void;
+  quiet?: boolean;
+}) {
+  return (
+    <div className={`flex flex-wrap gap-1.5 ${quiet ? "mt-1.5" : "mt-3"}`} role="group" aria-label={label}>
+      {options.map((o) => {
+        const on = value === o.key;
+        return (
+          <button
+            key={o.key}
+            type="button"
+            onClick={() => onChange(o.key)}
+            aria-pressed={on}
+            className={`rounded-full border px-3 py-1.5 transition-colors ${
+              quiet ? "text-[11px]" : "text-xs"
+            } ${on ? "border-accent text-accent" : "border-rule text-muted hover:border-edge hover:text-body"}`}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 /**
  * The stream, and the reason it is on the front page at all: the site proves
  * itself before asking for anything. No input, no account — you land on real
@@ -79,6 +110,7 @@ export function Feed({ initial, now }: { initial: Row[]; now: string }) {
   const [rows, setRows] = useState<Row[]>(initial);
   const [today, setToday] = useState(now.slice(0, 10));
   const [filter, setFilter] = useState<FilterKey>("all");
+  const [topic, setTopic] = useState<TopicFilter>("all");
   const [loading, setLoading] = useState(false);
   const [fresh, setFresh] = useState<Set<string>>(new Set());
 
@@ -89,20 +121,23 @@ export function Feed({ initial, now }: { initial: Row[]; now: string }) {
   const seen = useRef(new Set(initial.map((r) => r.id)));
   /* Read inside the interval so a filter change does not need a new timer. */
   const active = useRef<FilterKey>("all");
+  const activeTopic = useRef<TopicFilter>("all");
   active.current = filter;
+  activeTopic.current = topic;
 
   const query = useCallback(
-    (f: FilterKey, extra = "") => `/api/feed?limit=14${f === "all" ? "" : `&src=${f}`}${extra}`,
+    (f: FilterKey, t: TopicFilter, extra = "") =>
+      `/api/feed?limit=14${f === "all" ? "" : `&src=${f}`}${t === "all" ? "" : `&topic=${t}`}${extra}`,
     [],
   );
 
   /* Switching filter replaces the list rather than merging into it: a row that
      is on screen under "Everyone" and not under "GitHub" has to leave. */
   useEffect(() => {
-    if (filter === "all" && rows === initial) return;
+    if (filter === "all" && topic === "all" && rows === initial) return;
     let dead = false;
     setLoading(true);
-    fetch(query(filter))
+    fetch(query(filter, topic))
       .then((r) => r.json() as Promise<{ rows: Row[]; now: string }>)
       .then((d) => {
         if (dead) return;
@@ -115,7 +150,7 @@ export function Feed({ initial, now }: { initial: Row[]; now: string }) {
       .finally(() => { if (!dead) setLoading(false); });
     return () => { dead = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter]);
+  }, [filter, topic]);
 
   useEffect(() => {
     let dead = false;
@@ -127,7 +162,9 @@ export function Feed({ initial, now }: { initial: Row[]; now: string }) {
          impossible to test, since every browser available here reports the
          document hidden. */
       try {
-        const r = await fetch(query(active.current, `&since=${encodeURIComponent(since.current)}`));
+        const r = await fetch(
+          query(active.current, activeTopic.current, `&since=${encodeURIComponent(since.current)}`),
+        );
         const d = (await r.json()) as { rows: Row[]; now: string };
         if (dead || !d.rows?.length) { if (d?.now) since.current = d.now; return; }
         const added = d.rows.filter((x) => !seen.current.has(x.id));
@@ -148,26 +185,22 @@ export function Feed({ initial, now }: { initial: Row[]; now: string }) {
 
   return (
     <>
-      <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Filter by where it was said">
-        {FILTERS.map((f) => {
-          const on = filter === f.key;
-          return (
-            <button
-              key={f.key}
-              type="button"
-              onClick={() => setFilter(f.key)}
-              aria-pressed={on}
-              className={`rounded-full border px-3 py-1.5 text-xs transition-colors ${
-                on
-                  ? "border-accent text-accent"
-                  : "border-rule text-muted hover:border-edge hover:text-body"
-              }`}
-            >
-              {f.label}
-            </button>
-          );
-        })}
-      </div>
+      {/* Two layers: where they said it, and what they were asking for. Both
+          refetch rather than hiding rows — fourteen rows filtered in the browser
+          would usually leave nothing on screen. */}
+      <Chips
+        label="Filter by where it was said"
+        options={FILTERS}
+        value={filter}
+        onChange={(v) => setFilter(v as FilterKey)}
+      />
+      <Chips
+        label="Filter by what they wanted"
+        options={[{ key: "all", label: "Anything" }, ...TOPICS]}
+        value={topic}
+        onChange={(v) => setTopic(v as TopicFilter)}
+        quiet
+      />
 
       {/* aria-live, because rows arrive and the list changes without anybody
           asking it to — silent mutation is invisible to a screen reader. */}

@@ -1,5 +1,7 @@
 import "server-only";
 import { sql } from "./db";
+import { clipped } from "./readable";
+import { topicOf } from "./topics";
 
 /* The same filters that were tuned by measurement on the command line, moved
    here so the cron applies them rather than a script on somebody's laptop.
@@ -71,9 +73,14 @@ async function insert(rows: {
   for (const r of rows) {
     try {
       const out = await sql()`
-        insert into leads (id, src, who, repo, ctx, asked_on, wish, url, score, avatar)
+        insert into leads (id, src, who, repo, ctx, asked_on, wish, url, score, avatar, topic)
         values (${r.id}, ${r.src}, ${r.who}, ${r.repo}, ${r.ctx},
-                ${r.when || null}, ${r.wish}, ${r.url}, ${r.score}, ${r.avatar ?? null})
+                ${r.when || null}, ${r.wish}, ${r.url}, ${r.score}, ${r.avatar ?? null},
+                /* Classified on the text a reader will SEE, not the raw body:
+                   issue-form headings and markdown would otherwise vote. */
+                ${topicOf(clipped(r.wish), r.repo, r.ctx) === "other"
+                  ? null
+                  : topicOf(clipped(r.wish), r.repo, r.ctx)})
         on conflict (url) do nothing
         returning id
       `;

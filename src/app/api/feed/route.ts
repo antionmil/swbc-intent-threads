@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { hasDb, sql } from "@/lib/db";
 import { clipped, decode, ownWords } from "@/lib/readable";
+import { TOPICS } from "@/lib/topics";
 
 export const dynamic = "force-dynamic";
 
@@ -17,13 +18,16 @@ type Wire = {
  * which anything can arrive while you are reading. The feed itself is ordered by
  * asked_on, because that is the true chronology of somebody wanting a thing.
  */
-/* Closed set, checked here rather than interpolated: the value reaches a query. */
+/* Closed sets, checked here rather than interpolated: both reach a query. */
 const SOURCES = new Set(["github", "hn", "youtube"]);
+const TOPIC_KEYS = new Set(TOPICS.map((t) => t.key as string));
 
 export async function GET(req: NextRequest) {
   const since = req.nextUrl.searchParams.get("since");
   const asked = req.nextUrl.searchParams.get("src");
   const src = asked && SOURCES.has(asked) ? asked : null;
+  const wanted = req.nextUrl.searchParams.get("topic");
+  const topic = wanted && TOPIC_KEYS.has(wanted) ? wanted : null;
   const limit = Math.min(30, Number(req.nextUrl.searchParams.get("limit")) || 12);
   const now = new Date().toISOString();
   const dead = { headers: { "cache-control": "no-store" } };
@@ -40,6 +44,7 @@ export async function GET(req: NextRequest) {
             from leads l left join blocked b on lower(b.who) = lower(l.who)
            where b.who is null and lower(l.who) not in ('ghost', 'deleted', '[deleted]')
              and (${src}::text is null or l.src = ${src})
+             and (${topic}::text is null or l.topic = ${topic})
              and l.first_seen > ${since}
            order by l.first_seen desc limit ${limit}`
       : await sql()`
@@ -47,6 +52,7 @@ export async function GET(req: NextRequest) {
             from leads l left join blocked b on lower(b.who) = lower(l.who)
            where b.who is null and lower(l.who) not in ('ghost', 'deleted', '[deleted]')
              and (${src}::text is null or l.src = ${src})
+             and (${topic}::text is null or l.topic = ${topic})
            order by l.asked_on desc nulls last, l.score desc limit ${limit}`
     ) as unknown as Record<string, string | null>[];
 

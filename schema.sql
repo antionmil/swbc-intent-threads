@@ -59,3 +59,10 @@ create index if not exists videos_stale_idx on videos (last_read nulls first);
 -- those fall back to a monogram in the UI. Never a stand-in photograph for a
 -- real named person.
 alter table leads add column if not exists avatar text;
+
+/* What kind of thing the person was asking for: a rules classifier over the
+   wish, the repository and the video title, run once when the lead is mined.
+   NULL for the third that is genuinely miscellaneous — the filter narrows
+   rather than partitions, so those show under "All" and nowhere else. */
+alter table leads add column if not exists topic text;
+create index if not exists leads_topic_idx on leads (topic) where topic is not null;

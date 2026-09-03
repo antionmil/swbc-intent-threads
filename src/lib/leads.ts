@@ -53,7 +53,10 @@ async function search(terms: string[], limit: number): Promise<Lead[] | null> {
      user input — but it speaks English, not tsquery: it reads spaces as AND and
      silently drops a "|". Sixteen terms joined with "|" therefore became a
      sixteen-way AND and matched nothing at all. */
-  const q = terms.slice(0, 16).join(" or ");
+  /* Was 16. The concept expansion hands over more terms than that — the whole
+     scheduling family is eleven words on its own — and truncating at 16 threw
+     away the very siblings the expansion exists to reach. */
+  const q = terms.slice(0, 40).join(" or ");
   try {
     const rows = (await sql()`
       select l.id, l.src, l.who, l.repo, l.ctx, to_char(l.asked_on, 'YYYY-MM-DD') as asked_on, l.wish, l.url, l.score, l.avatar,

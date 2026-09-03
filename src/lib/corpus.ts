@@ -81,7 +81,17 @@ const STOP = new Set(
    "free open source software product tool app apps page site website home pricing price features feature docs blog " +
    "login signup start started learn contact privacy terms cookie team teams user users customer customers business " +
    "solution solutions platform service services simple easy fast better best help support build built building " +
-   "create created creates add added adding change changed try tried trying works working thanks thank hello hey")
+   "create created creates add added adding change changed try tried trying works working thanks thank hello hey " +
+   /* Added after tracing real product pages. Cal.com's title and description
+      yielded "fully taking platforms individuals businesses developers online
+      calls" beside "scheduling"; Plausible's yielded "ditch plans match growth
+      based alternative" out of "It's time to ditch Google Analytics" and "plans
+      that match your growth". A comment about pseudo-label visualization
+      outranked a doctor's surgery wanting an appointment app, because it shared
+      "online" and "meet". None of these say what a product IS. */
+   "alternative alternatives ditch plans plan growth match matches based fully taking individuals " +
+   "businesses developers online calls respected powerful modern trusted seamless intuitive " +
+   "unlimited reliable everything anything company companies clients people person")
     .split(" "),
 );
 
@@ -103,6 +113,74 @@ export type Hit = { lead: Lead; score: number; shared: string[] };
  * weaker overlap from a person describing a product they wish existed — the
  * whole value is that these are people worth writing to.
  */
+/* How informative a shared word has to be before it can carry a match.
+ *
+ * Measured on this corpus: "analytics" 6.85, "bookings" 6.85, "scheduling"
+ * 5.35 — the words a product is about. "based" 4.33, "alternative" 4.15,
+ * "google" 3.95, "data" 3.25 — the words every page contains. Plausible's
+ * results were four fifths "google" and "data" matches: a wellness studio
+ * wanting a room-booking app, and somebody wanting off-site backup that is not
+ * AWS or Google, listed as leads for a privacy analytics tool.
+ *
+ * 4.5 sits in the gap. It is a property of this corpus's size, so it moves if
+ * the corpus grows by an order of magnitude. */
+const DECISIVE = 4.5;
+
+/**
+ * Words that mean the same job, grouped so a match can be about a subject
+ * rather than about a string.
+ *
+ * This is what "the results do not match the product" came down to. Cal.com's
+ * page says "scheduling"; three leads in 1,931 use that exact word. The people
+ * who actually want it wrote "appointment", "booking", "calendar", "availability"
+ * — thirty-seven leads, and the matcher could not see any of them because it
+ * compared spellings. Plausible says "analytics", which two leads use; the ones
+ * that matter say "tracking", "dashboard", "stats", "page views", "reports" —
+ * fifty-seven. Every group below is checked against the corpus: a term that no
+ * lead contains is dead weight and was dropped.
+ *
+ * Not a synonym dictionary and not trying to be. It covers the subjects this
+ * index actually holds, which is what a product pasted into the box is likely
+ * to be about, and it grows when the corpus does.
+ */
+const CONCEPTS: string[][] = [
+  "schedule scheduling scheduler appointment appointments booking bookings calendar calendars availability slots".split(" "),
+  "analytics metrics stats statistics tracking visitors traffic insights dashboard reporting reports".split(" "),
+  "invoice invoices invoicing billing receipt receipts payments checkout".split(" "),
+  "crm contacts pipeline clients customers deals".split(" "),
+  "accounting bookkeeping expenses payroll tax quickbooks xero".split(" "),
+  "inventory stock warehouse barcode".split(" "),
+  "newsletter campaigns mailing subscribers broadcast sequences".split(" "),
+  "notes notebook markdown wiki outline annotations".split(" "),
+  "task tasks todo kanban backlog".split(" "),
+  "backup backups archive snapshot restore sync replication".split(" "),
+  "player streaming library playlist subtitles metadata".split(" "),
+  "password passwords vault credentials authenticator".split(" "),
+  "monitoring alerts uptime logs observability telemetry".split(" "),
+  "search searching index indexing query filter filters".split(" "),
+  "chat messaging inbox threads notifications".split(" "),
+];
+
+const GROUP = new Map<string, number>();
+CONCEPTS.forEach((words, i) => words.forEach((w) => GROUP.set(w, i)));
+
+/**
+ * The same terms, plus the rest of every subject they belong to.
+ *
+ * Postgres does recall and the artifact does precision, so the expansion has to
+ * happen in BOTH or it happens in neither: a lead that says "appointment" and
+ * never says "scheduling" is not in the candidate set the ranker is handed, and
+ * no amount of cleverness downstream can rank a row it was never given.
+ */
+export function expand(list: string[], cap = 40): string[] {
+  const out = new Set(list);
+  for (const t of list) {
+    const g = GROUP.get(t);
+    if (g !== undefined) for (const sib of CONCEPTS[g]) out.add(sib);
+  }
+  return [...out].slice(0, cap);
+}
+
 export function rank(queryTerms: string[], limit = 24, over: Lead[] = LEADS): Hit[] {
   const q = new Map<string, number>();
   for (const t of queryTerms) q.set(t, (q.get(t) ?? 0) + 1);
@@ -147,24 +225,73 @@ export function rank(queryTerms: string[], limit = 24, over: Lead[] = LEADS): Hi
   const norm = Math.sqrt(qTerms.reduce((a, t) => a + w(t) ** 2, 0)) || 1;
   const out: Hit[] = [];
 
+  /* Which subjects the page is about, for the concept expansion below. */
+  const qGroups = new Map<number, string>();
+  for (const t of qTerms) {
+    const g = GROUP.get(t);
+    if (g !== undefined && core.has(t) && !qGroups.has(g)) qGroups.set(g, t);
+  }
+
   for (const lead of over) {
     const set = new Set(lead.t);
-    const shared = qTerms.filter((t) => set.has(t));
-    if (shared.length === 0) continue;
-    if (!shared.some((t) => core.has(t))) continue;
+
+    /* Exact shared words. A word only counts as DECISIVE if the page is about
+       it and the corpus has seen it more than once. The df floor matters as
+       much as the core test: with 1,931 leads a term appearing in exactly one
+       of them carries the highest IDF in the index while telling you nothing —
+       "meet" (df 1) scored 7.54 against "scheduling" (df 9) at 5.35, so the
+       rarest word on the page was the least informative one. */
+    const hits = new Map<string, { weight: number; decisive: boolean }>();
+    for (const t of qTerms) {
+      if (!set.has(t)) continue;
+      hits.set(t, {
+        weight: w(t),
+        decisive: core.has(t) && (DF.get(t) ?? 0) >= 2 && idf(t) >= DECISIVE,
+      });
+    }
+
+    /* Same subject, different word. Discounted, because "appointment" is
+       evidence about a scheduling product but weaker evidence than the word the
+       page itself used. Decisive when the page is about the subject: belonging
+       to a hand-built topical group IS the test of topicality, so the IDF floor
+       that exists to weed out filler does not apply a second time here. */
+    for (const [g, qt] of qGroups) {
+      for (const sib of CONCEPTS[g]) {
+        if (hits.has(sib) || !set.has(sib)) continue;
+        hits.set(sib, { weight: 0.75 * idf(sib) * tf(qt), decisive: true });
+      }
+    }
+
+    if (hits.size === 0) continue;
+    if (![...hits.values()].some((h) => h.decisive)) continue;
+    /* The words the READER will see underlined in the lead, which for a concept
+       match is the lead's word ("appointment"), not the product's
+       ("scheduling"). */
+    const shared = [...hits.keys()];
     /* Only the three rarest shared terms count. Summing all of them let a lead
        that happened to share eight generic words — tool, app, data, way — beat
        one that shared the single word the product is actually about. In this
        corpus "tool" carries an IDF of 1.26 and "analytics" carries 5.83, so
        breadth of vocabulary is mostly noise and rarity is the whole signal. */
-    const best = shared.map(w).sort((a, b) => b - a).slice(0, 3);
-    const overlap = best.reduce((a, v) => a + v, 0) / norm;
-    const breadth = Math.sqrt(Math.min(shared.length, 4));
+    /* One decisive word beats several accidental ones.
+     *
+     * This used to sum the three best terms and multiply by
+     * sqrt(min(shared, 4)) — a breadth bonus. Traced on cal.com, that put a
+     * comment about pseudo-label visualization at rank 5 and "strong" because
+     * it shared "meet" and "online", while "I need an appointment scheduling
+     * app for booking for different doctors" — the single best lead in the
+     * index for that product — sat at rank 7 labelled "worth a look". Two junk
+     * words outscored the one word the product is actually about.
+     *
+     * So the best term carries the score and the others only nudge it. A
+     * second decisive word should help; a second coincidence should not. */
+    const best = [...hits.values()].map((h) => h.weight).sort((a, b) => b - a);
+    const overlap = (best[0] + 0.35 * (best[1] ?? 0) + 0.15 * (best[2] ?? 0)) / norm;
     /* Quality tilts, it does not decide. Multiplying by the raw score let a
        tidy-looking ask with a weak term match outrank the person who used the
        product's actual vocabulary. */
     const quality = 0.55 + 0.45 * lead.score;
-    out.push({ lead, score: overlap * breadth * quality, shared });
+    out.push({ lead, score: overlap * quality, shared });
   }
   out.sort((a, b) => b.score - a.score);
 
@@ -172,7 +299,7 @@ export function rank(queryTerms: string[], limit = 24, over: Lead[] = LEADS): Hi
      of them buries the one lead that is real. Anything scoring under a fifth of
      the leader is dropped before it is ever shown. */
   const top = out[0]?.score ?? 0;
-  return out.filter((h) => h.score >= top * 0.2).slice(0, limit);
+  return out.filter((h) => h.score >= top * 0.3).slice(0, limit);
 }
 
 /**
