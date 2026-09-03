@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { LEADS } from "@/lib/corpus";
+import { total } from "@/lib/leads";
 
 export const revalidate = 3600;
 
@@ -11,8 +12,8 @@ export const revalidate = 3600;
  * to catch. A failed lookup renders its own message on /find instead of
  * bouncing back here with a query string.
  */
-export default function Home() {
-  const total = LEADS.length;
+export default async function Home() {
+  const count = await total();
   const fresh = LEADS.filter((l) => (l.when ?? "") >= isoDaysAgo(7)).length;
   const newest = LEADS.reduce((a, l) => (l.when > a ? l.when : a), "");
 
@@ -45,7 +46,7 @@ export default function Home() {
       </form>
 
       <p className="mt-5 text-xs text-faint">
-        {total.toLocaleString()} public asks indexed · {fresh} from the last 7 days ·
+        {count.toLocaleString()} public asks indexed · {fresh} from the last 7 days ·
         newest {newest}
       </p>
       <p className="mt-2 text-xs text-faint">

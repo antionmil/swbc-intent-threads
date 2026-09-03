@@ -57,7 +57,7 @@ export type Hit = { lead: Lead; score: number; shared: string[] };
  * weaker overlap from a person describing a product they wish existed — the
  * whole value is that these are people worth writing to.
  */
-export function rank(queryTerms: string[], limit = 24): Hit[] {
+export function rank(queryTerms: string[], limit = 24, over: Lead[] = LEADS): Hit[] {
   const q = new Map<string, number>();
   for (const t of queryTerms) q.set(t, (q.get(t) ?? 0) + 1);
 
@@ -85,7 +85,7 @@ export function rank(queryTerms: string[], limit = 24): Hit[] {
   const norm = Math.sqrt(qTerms.reduce((a, t) => a + w(t) ** 2, 0)) || 1;
   const out: Hit[] = [];
 
-  for (const lead of LEADS) {
+  for (const lead of over) {
     const set = new Set(lead.t);
     const shared = qTerms.filter((t) => set.has(t));
     if (shared.length === 0) continue;

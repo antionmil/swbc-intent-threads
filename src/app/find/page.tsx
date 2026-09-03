@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { LeadRow } from "@/components/LeadRow";
-import { band, rank } from "@/lib/corpus";
+import { band, rank, type Hit } from "@/lib/corpus";
+import { search } from "@/lib/leads";
 import { normalise, readProduct } from "@/lib/product";
 
 /* Cannot be prerendered — the URL is only known at request time — but the
@@ -30,7 +31,14 @@ export default async function Find({
     );
   }
 
-  const all = rank(read.terms, 60);
+  /* Postgres first — it holds everything the nightly cron has added since the
+     last deploy — but only to narrow the field. The ranking is the artifact's,
+     applied to whichever set came back, so both paths order results the same
+     way. The bundled artifact is the floor: if the database is cold,
+     unreachable or unconfigured the page still answers, rather than rendering
+     an empty result with a 200. */
+  const live = await search(read.weighted, 300);
+  const all: Hit[] = live?.length ? rank(read.terms, 60, live) : rank(read.terms, 60);
   /* Strong first, and only a taste of the tail. With a corpus this size most
      products have one real match and a long shadow of near-misses; showing all
      of them buries the one that matters and makes the good one look like noise. */
