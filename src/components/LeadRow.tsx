@@ -1,4 +1,5 @@
 import { why, type Hit } from "@/lib/corpus";
+import { Face } from "@/components/Face";
 
 const TONE = {
   strong: "border-good/60 text-good",
@@ -58,8 +59,14 @@ export function LeadRow({ hit, band }: { hit: Hit; band: keyof typeof TONE }) {
             asked under <span className="text-muted">{lead.ctx}</span>
           </p>
         )}
-        <p className="mt-2 font-mono text-xs text-muted">
-          {lead.who} · {where} · {lead.when}
+        {/* The face sits on the byline, not at the head of the row: the left
+            edge belongs to the match evidence, which is the argument. Here it
+            does the one job it is for — this is a person, not a record. */}
+        <p className="mt-2 flex items-center gap-2 font-mono text-xs text-muted">
+          <Face who={lead.who} src={lead.src} avatar={lead.avatar} size={22} />
+          <span>
+            {lead.who} · {where} · {lead.when}
+          </span>
         </p>
       </div>
 

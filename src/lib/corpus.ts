@@ -1,4 +1,5 @@
 import "server-only";
+import { clipped } from "@/lib/readable";
 import raw from "@/data/corpus.json";
 
 /**
@@ -17,9 +18,21 @@ export type Lead = {
   /** The video a YouTube comment sits under. Without it the comment is not
    *  legible — and it is where the matched terms came from. */
   ctx?: string;
+  /** Only where a real one exists: GitHub and YouTube have them, Hacker News
+   *  has none, and a stand-in photograph for a real named person is not a
+   *  placeholder, it is a fabrication. Those get a monogram instead. */
+  avatar?: string;
 };
 
-export const LEADS = raw as Lead[];
+export const LEADS = (raw as Lead[]).map((l) => ({
+  ...l,
+  /* The artifact stores what the person typed, markdown and all. */
+  wish: clipped(l.wish),
+  /* A GitHub avatar is a pure function of the handle, so the bundled artifact
+     gets faces too — the fallback path is not a degraded-looking page. YouTube
+     avatars are per-comment and only exist in the database. */
+  avatar: l.avatar ?? (l.src === "github" ? `https://github.com/${l.who}.png?size=96` : undefined),
+}));
 
 /* Inverse document frequency, computed once per cold start over ~1,300 rows.
    Without it "app", "tool" and "data" drown out the words that actually

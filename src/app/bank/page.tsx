@@ -1,8 +1,18 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { LEADS } from "@/lib/corpus";
+import { Face } from "@/components/Face";
 
 export const revalidate = 3600;
+
+/* Where the person said it. The takedown link that used to sit on every row is
+   gone: it invited a stranger to click "remove me" next to somebody else's name,
+   and the page-level notice on the front page says the same thing once. */
+const WHERE: Record<string, (l: { repo: string; ctx?: string }) => string> = {
+  github: (l) => l.repo || "GitHub",
+  youtube: (l) => l.ctx || "YouTube",
+  hn: () => "Hacker News",
+};
 
 export const metadata: Metadata = {
   title: "The bank — Intent threads",
@@ -37,33 +47,37 @@ export default function Bank() {
 
       <ol className="mt-9">
         {rows.map((l) => (
-          <li key={l.id} className="border-b border-rule py-5">
-            <p className="prose-tight leading-relaxed text-body">{l.wish}</p>
-            <p className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-xs text-muted">
-              <span>{l.who}</span>
-              <span aria-hidden>·</span>
-              <span>{l.src === "github" ? l.repo || "GitHub" : "Hacker News"}</span>
-              <span aria-hidden>·</span>
-              <span>{l.when}</span>
-              <span aria-hidden>·</span>
-              <a
-                href={l.url}
-                target="_blank"
-                rel="noopener nofollow"
-                className="text-accent underline underline-offset-4"
-              >
-                reply ↗
-              </a>
-              <span aria-hidden>·</span>
-              <a
-                href="https://github.com/antionmil/swbc-intent-threads/issues/new?title=Please+remove+me&body=Your+handle+or+the+link+to+your+comment%3A"
-                target="_blank"
-                rel="noopener nofollow"
-                className="text-faint underline underline-offset-4 hover:text-accent"
-              >
-                remove me
-              </a>
-            </p>
+          <li key={l.id} className="flex items-start gap-3 border-b border-rule py-5">
+            <span className="mt-0.5">
+              <Face who={l.who} src={l.src} avatar={l.avatar} size={30} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="prose-tight leading-relaxed text-body">{l.wish}</p>
+              {l.ctx && (
+                <p className="mt-1.5 text-xs text-faint">
+                  asked under <span className="text-muted">{l.ctx}</span>
+                </p>
+              )}
+              <p className="mt-2 flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-xs text-muted">
+                <span>{l.who}</span>
+                <span aria-hidden>·</span>
+                {/* Three sources, not two. This read `github ? repo : "Hacker News"`
+                    and so labelled every YouTube comment as Hacker News — a wrong
+                    attribution under a real person's real name. */}
+                <span>{WHERE[l.src]?.(l) ?? l.src}</span>
+                <span aria-hidden>·</span>
+                <span>{l.when}</span>
+                <span aria-hidden>·</span>
+                <a
+                  href={l.url}
+                  target="_blank"
+                  rel="noopener nofollow"
+                  className="text-accent underline underline-offset-4"
+                >
+                  reply ↗
+                </a>
+              </p>
+            </div>
           </li>
         ))}
       </ol>

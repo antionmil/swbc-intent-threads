@@ -65,15 +65,15 @@ type Result = { found: number; added: number; note?: string };
 
 async function insert(rows: {
   id: string; src: string; who: string; repo: string; ctx: string;
-  when: string; wish: string; url: string; score: number;
+  when: string; wish: string; url: string; score: number; avatar?: string;
 }[]) {
   let added = 0;
   for (const r of rows) {
     try {
       const out = await sql()`
-        insert into leads (id, src, who, repo, ctx, asked_on, wish, url, score)
+        insert into leads (id, src, who, repo, ctx, asked_on, wish, url, score, avatar)
         values (${r.id}, ${r.src}, ${r.who}, ${r.repo}, ${r.ctx},
-                ${r.when || null}, ${r.wish}, ${r.url}, ${r.score})
+                ${r.when || null}, ${r.wish}, ${r.url}, ${r.score}, ${r.avatar ?? null})
         on conflict (url) do nothing
         returning id
       `;
@@ -112,6 +112,9 @@ export async function mineGithub(days = 3): Promise<Result> {
         id: await idOf(who, wish), src: "github", who,
         repo: String(it.repository_url ?? "").split("/repos/").pop() ?? "",
         ctx: "", when, wish, url: String(it.html_url ?? ""), score,
+        /* A pure function of the handle — no request needed, and it is the
+           real photograph rather than a stand-in. */
+        avatar: `https://github.com/${who}.png?size=96`,
       });
     }
     await wait(token ? 2200 : 6500);
@@ -172,6 +175,7 @@ export async function mineYouTube(videos = 120): Promise<Result> {
         when: String(sn.publishedAt ?? "").slice(0, 10), wish,
         url: `https://www.youtube.com/watch?v=${v.id}&lc=${String(it.id ?? "")}`,
         score: 0.85,
+        avatar: String(sn.authorProfileImageUrl ?? "") || undefined,
       });
     }
     await sql()`update videos set last_read = now() where id = ${v.id}`;

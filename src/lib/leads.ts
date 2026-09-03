@@ -1,4 +1,5 @@
 import "server-only";
+import { clipped } from "@/lib/readable";
 import { unstable_cache } from "next/cache";
 import { hasDb, sql } from "./db";
 import type { Lead } from "./corpus";
@@ -14,7 +15,8 @@ import { LEADS as BUNDLED } from "./corpus";
  */
 type Row = {
   id: string; src: string; who: string; repo: string; ctx: string;
-  asked_on: string | null; wish: string; url: string; score: number; rank: number;
+  asked_on: string | null; wish: string; url: string; score: number;
+  avatar: string | null; rank: number;
 };
 
 import { terms as tokenise } from "./corpus";
@@ -24,8 +26,13 @@ import { terms as tokenise } from "./corpus";
    deriving it on the way out keeps the two paths scoring identically. */
 const toLead = (r: Row): Lead => ({
   id: r.id, src: r.src as Lead["src"], who: r.who, repo: r.repo ?? "",
-  ctx: r.ctx || undefined, when: (r.asked_on ?? "").slice(0, 10),
-  wish: r.wish, url: r.url, score: r.score,
+  /* String(), not .slice(): the column is a `date`, and the neon driver hands
+     back a JS Date for it. Calling .slice on that threw inside every mapper, so
+     search() and recent() both caught their own crash and quietly served the
+     bundled artifact instead of the database — for every visitor, invisibly.
+     The query now casts with to_char; this is the belt to that pair of braces. */
+  ctx: r.ctx || undefined, when: String(r.asked_on ?? "").slice(0, 10),
+  wish: clipped(r.wish), url: r.url, score: r.score, avatar: r.avatar ?? undefined,
   t: [...new Set(tokenise(`${r.wish} ${r.ctx ?? ""}`))].slice(0, 44),
 });
 
@@ -49,7 +56,7 @@ async function search(terms: string[], limit: number): Promise<Lead[] | null> {
   const q = terms.slice(0, 16).join(" or ");
   try {
     const rows = (await sql()`
-      select l.id, l.src, l.who, l.repo, l.ctx, l.asked_on, l.wish, l.url, l.score,
+      select l.id, l.src, l.who, l.repo, l.ctx, to_char(l.asked_on, 'YYYY-MM-DD') as asked_on, l.wish, l.url, l.score, l.avatar,
              ts_rank(l.fts, websearch_to_tsquery('english', ${q})) as rank
         from leads l
         left join blocked b on lower(b.who) = lower(l.who)
@@ -87,7 +94,7 @@ export async function recent(limit = 250): Promise<Lead[]> {
   if (!hasDb()) return BUNDLED.slice(0, limit);
   try {
     const rows = (await sql()`
-      select l.id, l.src, l.who, l.repo, l.ctx, l.asked_on, l.wish, l.url, l.score, 0 as rank
+      select l.id, l.src, l.who, l.repo, l.ctx, to_char(l.asked_on, 'YYYY-MM-DD') as asked_on, l.wish, l.url, l.score, l.avatar, 0 as rank
         from leads l
         left join blocked b on lower(b.who) = lower(l.who)
        where b.who is null

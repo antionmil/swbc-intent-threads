@@ -52,3 +52,10 @@ create table if not exists videos (
   last_read  timestamptz
 );
 create index if not exists videos_stale_idx on videos (last_read nulls first);
+
+-- A face, where one genuinely exists.
+-- GitHub is derivable from the handle; YouTube hands one back with the comment;
+-- Hacker News has none at all (its user record is about/karma/username), so
+-- those fall back to a monogram in the UI. Never a stand-in photograph for a
+-- real named person.
+alter table leads add column if not exists avatar text;

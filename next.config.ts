@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const config: NextConfig = {
+  /* Avatars are rendered with a plain <img>, not next/image: they come from two
+     hosts we do not control, they are already 96px, and putting the optimizer
+     in front of 1,900 third-party images would bill for work nobody needs. */
   async headers() {
     return [
       {

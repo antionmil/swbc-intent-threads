@@ -57,3 +57,12 @@ body { font-family: var(--font-body); -webkit-font-smoothing: antialiased; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* A row that arrived while you were reading. Short, once, and never a colour
+   change alone — the "new" badge carries the meaning for anyone who cannot see
+   the movement, and reduced-motion above kills the animation outright. */
+@keyframes land {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: none; }
+}
+.land { animation: land 260ms ease-out; }
