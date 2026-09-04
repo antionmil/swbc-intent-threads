@@ -48,6 +48,26 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ job:
   }
   if (!hasDb()) return NextResponse.json({ error: "no database configured" }, { status: 503 });
 
+  /* YouTube's Developer Policies, III.E.4.c: an API client "may temporarily
+   * store limited amounts of Non-Authorized Data ... but not longer than 30
+   * calendar days". Comment text and author photos are exactly that.
+   *
+   * So every cron run sweeps first, before it does anything else. Putting it
+   * here rather than in the YouTube job means the sweep still happens on the
+   * days the miner fails, and a retention rule that only runs when everything
+   * else worked is not a retention rule. first_seen is when WE retrieved it,
+   * which is the clock the policy is counting. */
+  try {
+    const gone = (await sql()`
+      delete from leads
+       where src = 'youtube' and first_seen < now() - interval '30 days'
+       returning id
+    `) as unknown as { id: string }[];
+    if (gone.length) console.log(`[cron] retention: dropped ${gone.length} YouTube rows past 30 days`);
+  } catch (e) {
+    console.error("[cron] retention sweep failed", e);
+  }
+
   const { job } = await params;
   const started = Date.now();
   try {
@@ -70,6 +90,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ job:
       await sql()`insert into runs (source, found, added, note) values (${job}, 0, 0, ${note})`;
     } catch {}
     console.error("[cron]", job, e);
-    return NextResponse.json({ error: note }, { status: 500 });
+    /* The message goes to the runs table and the logs, not down the wire. It
+       can carry a connection string, a table name or a stack frame, and the
+       caller does not need any of that to know the job failed. */
+    return NextResponse.json({ error: "job failed" }, { status: 500 });
   }
 }

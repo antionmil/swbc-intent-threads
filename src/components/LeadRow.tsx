@@ -48,8 +48,13 @@ export function LeadRow({ hit, band }: { hit: Hit; band: keyof typeof TONE }) {
     <li className="border-b border-rule py-5 sm:flex sm:gap-4">
       <span
         className={`mb-2.5 inline-block h-fit rounded-full border px-2.5 py-1 font-mono text-[11px] whitespace-nowrap sm:mt-0.5 sm:mb-0 sm:shrink-0 ${TONE[band]}`}
-        title={`Shared with your page: ${shared.join(", ")}`}
+        title={`${band} match — shared with your page: ${shared.join(", ")}`}
       >
+        {/* The band was carried by the border and text colour and nothing else,
+            so it did not exist for anyone who cannot see the difference between
+            green and amber. Said in words, to screen readers only, because the
+            colour is doing fine for everybody else. */}
+        <span className="sr-only">{band} match: </span>
         {on.join(" · ")}
       </span>
 

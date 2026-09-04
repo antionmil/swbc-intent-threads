@@ -173,7 +173,11 @@ export function Feed({ initial, now }: { initial: Row[]; now: string }) {
           setRows((prev) => [...added, ...prev].slice(0, 40));
           setFresh((prev) => new Set([...prev, ...added.map((x) => x.id)]));
         }
-        since.current = d.now;
+        /* Only jump the cursor to the server's clock when the page came back
+           SHORT. A full page means there may be more behind it, and advancing to
+           "now" would step over them permanently — they were found before the
+           new cursor and would never match `first_seen > since` again. */
+        if (d.rows.length < 14) since.current = d.now;
         /* Roll the day over from the server's clock, so a tab left open past
            midnight starts saying "yesterday" without a reload. */
         setToday(d.now.slice(0, 10));

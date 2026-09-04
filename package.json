@@ -8,15 +8,12 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "db:push": "drizzle-kit push",
-    "db:gen": "drizzle-kit generate",
     "build:check": "NEXT_DIST_DIR=.next-build next build",
     "dev:webpack": "NODE_OPTIONS=--max-old-space-size=2048 next dev --webpack"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
     "@vercel/analytics": "^2.0.1",
-    "drizzle-orm": "^0.45.2",
     "next": "16.1.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",

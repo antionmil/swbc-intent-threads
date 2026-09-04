@@ -187,11 +187,14 @@ function Unreadable({ given, why }: { given: string; why: string }) {
   return (
     <main className="mx-auto w-full max-w-2xl px-5 pt-16 pb-20 sm:px-6">
       <p className="text-[11px] tracking-[0.2em] text-faint uppercase">Could not read it</p>
-      {/* Announced, not merely shown. Without this a screen reader user gets a
-          new page with no signal that anything went wrong. */}
-      <h1 role="alert" className="mt-4 text-3xl leading-tight font-semibold tracking-tight">
-        {why}
-      </h1>
+      {/* Announced AND still a heading. role="alert" was on the <h1> itself,
+          which replaces the heading role rather than adding to it: a screen
+          reader read the text out and never said it was a heading, so the page
+          lost its structure at exactly the moment somebody needed it. The live
+          region wraps it instead. */}
+      <div role="alert">
+        <h1 className="mt-4 text-3xl leading-tight font-semibold tracking-tight">{why}</h1>
+      </div>
       {given && <p className="mt-3 font-mono text-sm break-all text-muted">{given}</p>}
       <p className="prose-tight mt-5 max-w-prose text-body">
         Try the exact URL of the page that says what you built — a landing page or a

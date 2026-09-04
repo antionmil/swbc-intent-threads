@@ -80,3 +80,10 @@ create table if not exists presence (
   seen_at timestamptz not null default now()
 );
 create index if not exists presence_seen_idx on presence (seen_at);
+
+/* YouTube data is deleted 30 days after WE retrieved it, per the YouTube API
+   Services Developer Policies III.E.4.c — "not longer than 30 calendar days"
+   for non-authorized data. Enforced at the top of every cron run rather than
+   inside the YouTube job, so it still happens on days the miner fails.
+   first_seen is the retrieval time, which is the clock the policy counts. */
+create index if not exists leads_youtube_age_idx on leads (first_seen) where src = 'youtube';

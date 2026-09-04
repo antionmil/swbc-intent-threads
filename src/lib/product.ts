@@ -1,6 +1,7 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
 import { terms } from "./corpus";
+import { decode } from "./readable";
 
 /**
  * What a product says it is, taken from the product's own page.
@@ -45,10 +46,101 @@ function metaContent(html: string, key: string): string {
   }
   return "";
 }
+/* decode(), not delete. This replaced every entity with a space, so a page
+   titled "You&#39;re doing it wrong" was read back as "You re doing it wrong"
+   and printed that way in the "We read your page as" headline. */
 const strip = (s: string) =>
-  s.replace(/<[^>]+>/g, " ")
-   .replace(/&(#\d+|[a-z]+);/gi, " ")
-   .split(/\s+/).join(" ").trim();
+  decode(s.replace(/<[^>]+>/g, " ")).split(/\s+/).join(" ").trim();
+
+/* Everything that is not the public internet. Ranges from RFC 1918, RFC 6598,
+   RFC 3927, RFC 5737, RFC 2544 and the v6 equivalents — loopback, link-local
+   (which is where every cloud metadata service lives), carrier-grade NAT,
+   documentation ranges, multicast and reserved space. */
+function privateAddress(ip: string): boolean {
+  if (ip.includes(":")) {
+    const v = ip.toLowerCase();
+    /* ::ffff:10.0.0.1 is a v4 address wearing a v6 hat. */
+    const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(v);
+    if (mapped) return privateAddress(mapped[1]);
+    return (
+      v === "::" || v === "::1" ||
+      v.startsWith("fc") || v.startsWith("fd") ||   // unique local
+      v.startsWith("fe8") || v.startsWith("fe9") ||
+      v.startsWith("fea") || v.startsWith("feb") || // link-local
+      v.startsWith("ff")                            // multicast
+    );
+  }
+  const b = ip.split(".").map(Number);
+  if (b.length !== 4 || b.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return true;
+  const [a, c, d] = b;
+  return (
+    a === 0 || a === 10 || a === 127 ||
+    (a === 100 && c >= 64 && c <= 127) ||            // CGNAT
+    (a === 169 && c === 254) ||                      // link-local: cloud metadata
+    (a === 172 && c >= 16 && c <= 31) ||
+    (a === 192 && c === 0 && d === 0) ||
+    (a === 192 && c === 0 && d === 2) ||
+    (a === 192 && c === 168) ||
+    (a === 198 && (c === 18 || c === 19)) ||
+    (a === 198 && c === 51 && d === 100) ||
+    (a === 203 && c === 0 && d === 113) ||
+    a >= 224                                          // multicast and reserved
+  );
+}
+
+/**
+ * Resolve the hostname and refuse it if any address behind it is private.
+ *
+ * The lexical check in normalise() blocks "169.254.169.254" and "localhost".
+ * It cannot block "169.254.169.254.nip.io", which is an ordinary public
+ * hostname that resolves to the cloud metadata address — verified: it passed
+ * the filter and the fetch was attempted against the metadata service.
+ *
+ * ALL resolved addresses have to be public, not just the first: a name that
+ * answers with one public address and one private one is the same attack with
+ * a coin flip in it.
+ *
+ * The residual is DNS rebinding — a name whose answer changes between this
+ * lookup and the socket connecting. Closing that needs the connection pinned to
+ * the address that was checked, which fetch() does not expose. Said plainly
+ * rather than left to look complete: this raises the cost of the attack a great
+ * deal and does not reduce it to zero.
+ */
+/** Read at most `cap` bytes of the body, then abandon the rest. */
+async function readCapped(res: Response, cap: number): Promise<string> {
+  const body = res.body;
+  if (!body) return "";
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let out = "";
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      out += decoder.decode(value, { stream: true });
+      if (out.length >= cap) {
+        out = out.slice(0, cap);
+        break;
+      }
+    }
+  } catch {
+    /* A truncated read still gives us a title and a description. */
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+  return out;
+}
+
+async function publicOnly(hostname: string): Promise<boolean> {
+  try {
+    const { lookup } = await import("node:dns/promises");
+    const answers = await lookup(hostname, { all: true });
+    if (answers.length === 0) return false;
+    return answers.every((a) => !privateAddress(a.address));
+  } catch {
+    return false;
+  }
+}
 
 export function normalise(input: string): string | null {
   let u = input.trim();
@@ -63,8 +155,9 @@ export function normalise(input: string): string | null {
     if (h === "localhost" || h.endsWith(".localhost") || h.endsWith(".internal") ||
         h.endsWith(".local") || h.endsWith(".arpa") || h === "metadata.goog") return null;
     /* Literal addresses, v4 and v6. A hostname that RESOLVES to a private range
-       is still reachable — closing that needs DNS resolution before the fetch,
-       which is a real gap and is written down rather than glossed over. */
+       is handled separately, by resolving it before the fetch — see
+       publicOnly() below. This lexical pass stays because it is free and it
+       catches the obvious half. */
     if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) return null;
     if (h.includes(":")) return null;              // any IPv6 literal
     if (!h.includes(".")) return null;             // bare hostnames are internal
@@ -102,6 +195,10 @@ async function fetchProduct(url: string): Promise<Read | null> {
     let target: string | null = url;
     let res: Response | null = null;
     for (let hop = 0; hop < 4 && target; hop++) {
+      /* Resolved on EVERY hop, not only the first. A public host that redirects
+         to a name pointing at the metadata service is the same attack wearing a
+         302, and checking only the entry point would make this decoration. */
+      if (!(await publicOnly(new URL(target).hostname))) return null;
       const r: Response = await fetch(target, {
         signal: ctl.signal,
         redirect: "manual",
@@ -123,9 +220,18 @@ async function fetchProduct(url: string): Promise<Read | null> {
     if (!res || !res.ok) return null;
     const type = res.headers.get("content-type") ?? "";
     if (!type.includes("html")) return null;
-    /* Cap the read. A product page is a few hundred KB; anything far past that
-       is not a product page and should not be parsed on our clock. */
-    html = (await res.text()).slice(0, 600_000);
+
+    /* Read up to the cap and then STOP, rather than buffering everything and
+       slicing afterwards.
+     *
+     * `(await res.text()).slice(0, 600_000)` bounded what got parsed and
+     * bounded nothing else: a server answering with a gigabyte, or a gzip bomb
+     * that expands to one, was pulled into the function's memory in full before
+     * a single character was discarded. The cap described a limit it did not
+     * enforce. Streaming makes it an actual limit — the connection is dropped
+     * the moment enough has been read. */
+    html = await readCapped(res, 600_000);
+    if (!html) return null;
   } catch {
     return null;
   } finally {
