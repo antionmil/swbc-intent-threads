@@ -1,5 +1,6 @@
 import "server-only";
 import { clipped, decode, ownWords } from "@/lib/readable";
+import { topicOf } from "@/lib/topics";
 import raw from "@/data/corpus.json";
 import blocklist from "@/data/blocked.json";
 
@@ -19,6 +20,8 @@ export type Lead = {
   /** The video a YouTube comment sits under. Without it the comment is not
    *  legible — and it is where the matched terms came from. */
   ctx?: string;
+  /** What kind of thing they were asking for. Set when the lead is mined. */
+  topic?: string;
   /** Only where a real one exists: GitHub and YouTube have them, Hacker News
    *  has none, and a stand-in photograph for a real named person is not a
    *  placeholder, it is a fabrication. Those get a monogram instead. */
@@ -103,7 +106,11 @@ export function terms(s: string): string[] {
     .filter((w) => w.length > 2 && !STOP.has(w));
 }
 
-export type Hit = { lead: Lead; score: number; shared: string[] };
+export type Hit = {
+  lead: Lead; score: number; shared: string[];
+  /** Whether the lead wants the same KIND of thing the product is. */
+  agree?: "same" | "different" | "unknown";
+};
 
 /**
  * Rank the corpus against a product's own words.
@@ -145,7 +152,11 @@ const DECISIVE = 4.5;
  */
 const CONCEPTS: string[][] = [
   "schedule scheduling scheduler appointment appointments booking bookings calendar calendars availability slots".split(" "),
-  "analytics metrics stats statistics tracking visitors traffic insights dashboard reporting reports".split(" "),
+  /* "traffic" and "visitors" were in here and put "I need a small store, will
+     likely have high traffic" top of the results for a web analytics tool, as a
+     STRONG match. A shop owner counting people through the door and a site
+     owner counting page views share a word and nothing else. */
+  "analytics metrics stats statistics insights dashboard reporting reports".split(" "),
   "invoice invoices invoicing billing receipt receipts payments checkout".split(" "),
   "crm contacts pipeline clients customers deals".split(" "),
   "accounting bookkeeping expenses payroll tax quickbooks xero".split(" "),
@@ -154,10 +165,11 @@ const CONCEPTS: string[][] = [
   "notes notebook markdown wiki outline annotations".split(" "),
   "task tasks todo kanban backlog".split(" "),
   "backup backups archive snapshot restore sync replication".split(" "),
-  "player streaming library playlist subtitles metadata".split(" "),
+  /* "library" means a code library far more often here than a media one. */
+  "player streaming playlist subtitles transcode".split(" "),
   "password passwords vault credentials authenticator".split(" "),
   "monitoring alerts uptime logs observability telemetry".split(" "),
-  "search searching index indexing query filter filters".split(" "),
+  "search searching indexing autocomplete".split(" "),
   "chat messaging inbox threads notifications".split(" "),
 ];
 
@@ -181,7 +193,13 @@ export function expand(list: string[], cap = 40): string[] {
   return [...out].slice(0, cap);
 }
 
-export function rank(queryTerms: string[], limit = 24, over: Lead[] = LEADS): Hit[] {
+export function rank(
+  queryTerms: string[],
+  limit = 24,
+  over: Lead[] = LEADS,
+  /** What the pasted product is FOR, classified the same way a lead is. */
+  productTopic?: string,
+): Hit[] {
   const q = new Map<string, number>();
   for (const t of queryTerms) q.set(t, (q.get(t) ?? 0) + 1);
 
@@ -225,11 +243,21 @@ export function rank(queryTerms: string[], limit = 24, over: Lead[] = LEADS): Hi
   const norm = Math.sqrt(qTerms.reduce((a, t) => a + w(t) ** 2, 0)) || 1;
   const out: Hit[] = [];
 
-  /* Which subjects the page is about, for the concept expansion below. */
+  /* Which subjects the page is about.
+   *
+   * Only from what the product calls ITSELF — its title, description and first
+   * heading — never from a marketing subheading. readProduct counts those twice
+   * and everything else once, so a count of 2 or more is the test.
+   *
+   * Linear's subheadings say "Planning and monitoring", and taking subjects from
+   * there made the whole result set observability people: log analysis, uptime
+   * monitors, a Kubernetes node. All labelled strong, for an issue tracker. One
+   * word in one subheading captured every result on the page, which is exactly
+   * the failure this gate exists to stop. */
   const qGroups = new Map<number, string>();
   for (const t of qTerms) {
     const g = GROUP.get(t);
-    if (g !== undefined && core.has(t) && !qGroups.has(g)) qGroups.set(g, t);
+    if (g !== undefined && core.has(t) && (q.get(t) ?? 0) >= 2 && !qGroups.has(g)) qGroups.set(g, t);
   }
 
   for (const lead of over) {
@@ -255,15 +283,41 @@ export function rank(queryTerms: string[], limit = 24, over: Lead[] = LEADS): Hi
        page itself used. Decisive when the page is about the subject: belonging
        to a hand-built topical group IS the test of topicality, so the IDF floor
        that exists to weed out filler does not apply a second time here. */
+    let conceptHit = false;
     for (const [g, qt] of qGroups) {
       for (const sib of CONCEPTS[g]) {
-        if (hits.has(sib) || !set.has(sib)) continue;
+        if (!set.has(sib)) continue;
+        conceptHit = true;
+        if (hits.has(sib)) continue;
         hits.set(sib, { weight: 0.75 * idf(sib) * tf(qt), decisive: true });
       }
+      /* The product's own word for the subject counts as being on-subject too. */
+      if (set.has(qt)) conceptHit = true;
     }
 
     if (hits.size === 0) continue;
     if (![...hits.values()].some((h) => h.decisive)) continue;
+
+    /* THE JUDGEMENT STEP.
+     *
+     * Everything above asks "do these share words?". This asks "is this person
+     * after the same KIND of thing?", which is what was missing and why the
+     * results read as random however good the word matching got.
+     *
+     * The test is the SUBJECT, taken from the concept groups — not the topic
+     * label from the browse filter. That label was tried here first and made
+     * things worse rather than better: Plausible classifies as "Websites &
+     * design", because its own page says "your website data is 100% yours", and
+     * so does a shop owner asking about foot traffic — so the two "agreed" and
+     * a shop was promoted to a STRONG match for a web analytics tool. A coarse
+     * classifier used as a boost amplifies its own mistakes. It stays where it
+     * is honest work, labelling chips for browsing, and out of the ranking.
+     *
+     * Concept groups are hand-built, checked against the corpus and tight
+     * enough to trust. When the page is about a subject this index knows, a
+     * lead has to be about that subject too. When it is not, there is nothing
+     * to judge against and the word matching stands on its own. */
+    if (qGroups.size > 0 && !conceptHit) continue;
     /* The words the READER will see underlined in the lead, which for a concept
        match is the lead's word ("appointment"), not the product's
        ("scheduling"). */
@@ -291,7 +345,9 @@ export function rank(queryTerms: string[], limit = 24, over: Lead[] = LEADS): Hi
        tidy-looking ask with a weak term match outrank the person who used the
        product's actual vocabulary. */
     const quality = 0.55 + 0.45 * lead.score;
-    out.push({ lead, score: overlap * quality, shared });
+    /* Agreement is a strong tilt, not a veto: 1.35 when both sides say the same
+       subject, 0.3 when they say different ones, 1 when either is unlabelled. */
+    out.push({ lead, score: overlap * quality, shared, agree: conceptHit ? "same" : "unknown" });
   }
   out.sort((a, b) => b.score - a.score);
 
@@ -330,6 +386,9 @@ export function band(hits: Hit[], h: Hit): "strong" | "worth a look" | "loose" {
      Measured on this corpus: generic terms sit at 1.2–4.2, the words a product
      is actually about sit above 5.4. */
   const rarest = Math.max(...h.shared.map(idf), 0);
+  /* A lead that wants a different KIND of thing is never strong, whatever it
+     shares. That is the whole point of asking. */
+  if (h.agree === "different") return h.shared.length >= 2 ? "worth a look" : "loose";
   if (r >= 0.7 && rarest >= 5.0 && h.shared.length >= 2) return "strong";
   if (r >= 0.35 && rarest >= 4.2) return "worth a look";
   return "loose";

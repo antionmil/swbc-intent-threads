@@ -39,6 +39,14 @@ export default async function Privacy() {
           account, no cookie and no tracking pixel.
         </p>
         <p className="prose-tight mt-3 leading-relaxed text-muted">
+          The front page says how many people are reading it. That count comes from a
+          one-way hash of your IP address, salted with a secret only this deployment
+          knows, held for five minutes and then deleted. It cannot be turned back into
+          an address, it is not a cookie, and nothing is written to your browser. It
+          exists so the number is real: identifying a reader by something the browser
+          makes up would let one person claim to be a hundred.
+        </p>
+        <p className="prose-tight mt-3 leading-relaxed text-muted">
           Page views are counted by Vercel Analytics, which records the path and coarse
           country, and does not use cookies or build a profile of you. Our host keeps ordinary
           server logs, as every web host does.

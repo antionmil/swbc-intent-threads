@@ -66,3 +66,17 @@ alter table leads add column if not exists avatar text;
    rather than partitions, so those show under "All" and nowhere else. */
 alter table leads add column if not exists topic text;
 create index if not exists leads_topic_idx on leads (topic) where topic is not null;
+
+/* Who is here, right now, and nothing else.
+ *
+ * One row per visitor, keyed on a salted hash of their IP — not a cookie, not
+ * anything written to their browser, so the front page's promise that nothing
+ * is kept there stays true. The hash is one-way and the row is deleted after
+ * five minutes, so the table cannot say who was here, only how many. Keying on
+ * the address rather than a number the browser makes up is also what stops one
+ * person inventing a hundred ids and inflating a figure shown to everyone. */
+create table if not exists presence (
+  id text primary key,
+  seen_at timestamptz not null default now()
+);
+create index if not exists presence_seen_idx on presence (seen_at);

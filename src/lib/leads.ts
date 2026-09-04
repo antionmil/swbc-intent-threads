@@ -16,7 +16,7 @@ import { LEADS as BUNDLED } from "./corpus";
 type Row = {
   id: string; src: string; who: string; repo: string; ctx: string;
   asked_on: string | null; wish: string; url: string; score: number;
-  avatar: string | null; rank: number;
+  avatar: string | null; topic: string | null; rank: number;
 };
 
 import { terms as tokenise } from "./corpus";
@@ -33,6 +33,7 @@ const toLead = (r: Row): Lead => ({
      The query now casts with to_char; this is the belt to that pair of braces. */
   ctx: r.ctx ? decode(r.ctx) : undefined, when: String(r.asked_on ?? "").slice(0, 10),
   wish: clipped(r.wish), url: r.url, score: r.score, avatar: r.avatar ?? undefined,
+  topic: r.topic ?? undefined,
   t: [...new Set(tokenise(`${r.wish} ${r.ctx ?? ""}`))].slice(0, 44),
 });
 
@@ -59,7 +60,7 @@ async function search(terms: string[], limit: number): Promise<Lead[] | null> {
   const q = terms.slice(0, 40).join(" or ");
   try {
     const rows = (await sql()`
-      select l.id, l.src, l.who, l.repo, l.ctx, to_char(l.asked_on, 'YYYY-MM-DD') as asked_on, l.wish, l.url, l.score, l.avatar,
+      select l.id, l.src, l.who, l.repo, l.ctx, to_char(l.asked_on, 'YYYY-MM-DD') as asked_on, l.wish, l.url, l.score, l.avatar, l.topic,
              ts_rank(l.fts, websearch_to_tsquery('english', ${q})) as rank
         from leads l
         left join blocked b on lower(b.who) = lower(l.who)
@@ -117,6 +118,30 @@ const iso7 = () => new Date(Date.now() - 7 * 864e5).toISOString().slice(0, 10);
    frozen at build time would have decayed to 0 while the other kept climbing. */
 export const freshCount = unstable_cache(fresh7, ["lead-fresh-7"], { revalidate: 300 });
 
+/** What the crons found last, for the activity line. Null when they have not run. */
+async function lastRun(): Promise<{ found: number; when: string | null }> {
+  if (!hasDb()) return { found: 0, when: null };
+  try {
+    const r = (await sql()`
+      select added, to_char(started_at, 'YYYY-MM-DD') as day from runs
+       where added > 0 order by started_at desc limit 1
+    `) as unknown as { added: number; day: string }[];
+    if (!r[0]) return { found: 0, when: null };
+    const days = Math.round(
+      (Date.parse(new Date().toISOString().slice(0, 10)) - Date.parse(r[0].day)) / 864e5,
+    );
+    return {
+      found: r[0].added,
+      when: days <= 0 ? "today" : days === 1 ? "yesterday" : `${days} days ago`,
+    };
+  } catch (e) {
+    console.error("[leads] lastRun failed", e);
+    return { found: 0, when: null };
+  }
+}
+
+export const lastFind = unstable_cache(lastRun, ["last-run"], { revalidate: 300 });
+
 /** How many distinct people, not how many rows. */
 export function peopleIn(rows: { who: string }[]): number {
   return new Set(rows.map((r) => r.who.toLowerCase())).size;
@@ -139,7 +164,7 @@ export async function recent(limit = 250): Promise<Lead[]> {
   if (!hasDb()) return BUNDLED.slice(0, limit);
   try {
     const rows = (await sql()`
-      select l.id, l.src, l.who, l.repo, l.ctx, to_char(l.asked_on, 'YYYY-MM-DD') as asked_on, l.wish, l.url, l.score, l.avatar, 0 as rank
+      select l.id, l.src, l.who, l.repo, l.ctx, to_char(l.asked_on, 'YYYY-MM-DD') as asked_on, l.wish, l.url, l.score, l.avatar, l.topic, 0 as rank
         from leads l
         left join blocked b on lower(b.who) = lower(l.who)
        where b.who is null and lower(l.who) not in ('ghost', 'deleted', '[deleted]')

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { LeadRow } from "@/components/LeadRow";
 import { band, expand, rank, type Hit } from "@/lib/corpus";
+import { topicOf } from "@/lib/topics";
 import { peopleIn, search } from "@/lib/leads";
 import { normalise, readProduct } from "@/lib/product";
 
@@ -41,7 +42,13 @@ export default async function Find({
      the product did not literally use has to be in the query or the ranker never
      sees the lead that used it. */
   const live = await search(expand(read.weighted), 300);
-  const all: Hit[] = live?.length ? rank(read.terms, 60, live) : rank(read.terms, 60);
+  /* The product, classified by the same rules the leads were — the judgement
+     step in rank() compares the two, so both have to be measured the same way. */
+  const productTopic = topicOf(`${read.title} ${read.blurb}`);
+  const topic = productTopic === "other" ? undefined : productTopic;
+  const all: Hit[] = live?.length
+    ? rank(read.terms, 60, live, topic)
+    : rank(read.terms, 60, undefined, topic);
   /* Strong first, and only a taste of the tail. With a corpus this size most
      products have one real match and a long shadow of near-misses; showing all
      of them buries the one that matters and makes the good one look like noise. */

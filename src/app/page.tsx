@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { freshCount, recent, total } from "@/lib/leads";
+import { freshCount, lastFind, recent, total } from "@/lib/leads";
+import { Here } from "@/components/Here";
 import { Feed } from "@/components/Feed";
 import { Paste, StickyPaste } from "@/components/Paste";
 
@@ -20,7 +21,7 @@ export const revalidate = 900;
 export default async function Home() {
   /* All three from the same place. This page used to print a live database
      total beside a freshness figure counted off the build-time artifact. */
-  const [count, fresh, rows] = await Promise.all([total(), freshCount(), recent(14)]);
+  const [count, fresh, rows, run] = await Promise.all([total(), freshCount(), recent(14), lastFind()]);
 
   return (
     <main className="relative">
@@ -36,7 +37,10 @@ export default async function Home() {
       />
 
       <div className="relative mx-auto w-full max-w-2xl px-5 pt-14 pb-20 sm:px-6 sm:pt-20">
-        <p className="text-[11px] tracking-[0.24em] text-faint uppercase">Intent threads</p>
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+          <p className="text-[11px] tracking-[0.24em] text-faint uppercase">Intent threads</p>
+          <Here found={run.found} when={run.when} />
+        </div>
 
         <h1 className="mt-5 text-4xl leading-[1.06] font-semibold tracking-tight text-balance sm:text-[3.25rem]">
           People already asked for what you built.
