@@ -177,3 +177,24 @@ export function ownWords(t: string): boolean {
   if (i < 1) return true;
   return !(/[\w.?!,]$/.test(t.slice(0, i)) && /^"\s+[a-z]/.test(t.slice(i)));
 }
+
+/* Text addressed to a machine rather than written by somebody wanting a thing.
+ *
+ * People paste prompts, specs and acceptance criteria into GitHub issues, and
+ * they contain the same trigger phrases the miner looks for — "Is there a tool
+ * named advisor? Write ADVISOR_PRESENT=yes or ADVISOR_PRESENT=no. Step 2. …
+ * write the result verbatim inside a fenced code block". Seven rows of 1,932,
+ * which sounds ignorable until one of them is the top row on the front page,
+ * which it was. */
+const MACHINE = [
+  /\b[A-Z][A-Z0-9_]{3,}=(?:yes|no|true|false|\d|\w+)\b/,
+  /\bStep \d[.:]/,
+  /\b(?:you MUST|You must|verbatim|exactly once|do not output|respond with)\b/,
+  /\b(?:fenced code block|system prompt|assistant message|tool call)\b/i,
+  /\b(?:Acceptance Criteria|Definition of Done)\b/,
+];
+
+/** True when this reads as a person asking, not as instructions to a model. */
+export function humanAsk(t: string): boolean {
+  return !MACHINE.some((re) => re.test(t));
+}

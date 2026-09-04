@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { hasDb, sql } from "@/lib/db";
-import { clipped, decode, ownWords } from "@/lib/readable";
+import { clipped, decode, humanAsk, ownWords } from "@/lib/readable";
 import { TOPICS } from "@/lib/topics";
 
 export const dynamic = "force-dynamic";
@@ -61,7 +61,7 @@ export async function GET(req: NextRequest) {
       repo: r.repo ?? "", ctx: r.ctx ? decode(r.ctx) : "", when: String(r.asked_on ?? ""),
       wish: clipped(String(r.wish)), url: String(r.url), avatar: r.avatar,
     }));
-    return NextResponse.json({ rows: wire.filter((r) => ownWords(r.wish)), now }, dead);
+    return NextResponse.json({ rows: wire.filter((r) => ownWords(r.wish) && humanAsk(r.wish)), now }, dead);
   } catch (e) {
     /* A quiet feed beats an error banner: the page already has rows on it. */
     console.error("[feed]", e);
