@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { LeadRow } from "@/components/LeadRow";
-import { band, expand, rank, type Hit } from "@/lib/corpus";
+import { band, coverage, expand, rank, type Hit } from "@/lib/corpus";
 import { topicOf } from "@/lib/topics";
 import { peopleIn, search } from "@/lib/leads";
 import { normalise, readProduct } from "@/lib/product";
@@ -63,7 +63,9 @@ export default async function Find({
      asked for something like this" above six coincidences is the site lying
      about its own results — a hackathon page got exactly that, over a comment
      about entering tunnels in a game. */
-  const nothingReal = strong.length === 0;
+  /* The corpus has to know the subject before any of this means anything. */
+  const cover = coverage(read.terms);
+  const nothingReal = strong.length === 0 || !cover.covered;
 
   return (
     <main className="mx-auto w-full max-w-3xl px-5 pt-10 pb-20 sm:px-6">
@@ -101,7 +103,7 @@ export default async function Find({
       </header>
 
       {hits.length === 0 || nothingReal ? (
-        <Empty host={read.host} closest={hits.slice(0, 4)} />
+        <Empty host={read.host} closest={hits.slice(0, 4)} missing={cover.covered ? "" : cover.word} />
       ) : (
         <>
           {/* Three states, because there are three truths. Something strong;
@@ -148,7 +150,7 @@ export default async function Find({
   );
 }
 
-function Empty({ host, closest = [] }: { host: string; closest?: Hit[] }) {
+function Empty({ host, closest = [], missing = "" }: { host: string; closest?: Hit[]; missing?: string }) {
   return (
     <div className="mt-10">
       <h2 className="text-xl font-semibold tracking-tight">Nobody in here asked for this.</h2>
@@ -158,6 +160,14 @@ function Empty({ host, closest = [] }: { host: string; closest?: Hit[] }) {
         your customers would use, or what you built is not the kind of thing people
         ask strangers for.
       </p>
+      {missing && (
+        <p className="prose-tight mt-3 max-w-prose text-muted">
+          Your page is mostly about{" "}
+          <span className="font-mono text-ink">{missing}</span>, and not one of the{" "}
+          asks in here uses that word. Everything below would be a coincidence, so
+          we are not going to dress one up as a lead.
+        </p>
+      )}
       {closest.length > 0 && (
         <>
           <p className="mt-8 text-sm text-muted">

@@ -19,7 +19,8 @@ export const dynamic = "force-dynamic";
  * the site made it up or a stranger did.
  */
 export async function POST(req: NextRequest) {
-  if (!hasDb()) return NextResponse.json({ here: 0 }, { headers: { "cache-control": "no-store" } });
+  if (!hasDb())
+    return NextResponse.json({ here: 0, week: 0, ever: 0 }, { headers: { "cache-control": "no-store" } });
 
   /* x-vercel-forwarded-for first, then x-real-ip, then x-forwarded-for.
    *
@@ -53,17 +54,36 @@ export async function POST(req: NextRequest) {
        disabled or the deploy rolled back. */
     await sql()`delete from presence where seen_at < now() - interval '5 minutes'`;
 
+    /* One row per visitor per day. The insert tells us whether this person has
+       been counted today: if it inserted, they are new, and the day's total goes
+       up by one. The hash rows are swept after 8 days; the daily total is a bare
+       integer with nobody in it, so it can be kept for good. */
+    const fresh = (await sql()`
+      insert into visit_days (day, id) values (current_date, ${id})
+      on conflict do nothing returning id
+    `) as unknown as { id: string }[];
+    if (fresh.length) {
+      await sql()`
+        insert into visit_totals (day, n) values (current_date, 1)
+        on conflict (day) do update set n = visit_totals.n + 1
+      `;
+      await sql()`delete from visit_days where day < current_date - 8`;
+    }
+
     const [row] = (await sql()`
-      select count(*)::int as n from presence where seen_at > now() - interval '45 seconds'
-    `) as unknown as { n: number }[];
+      select
+        (select count(*)::int from presence where seen_at > now() - interval '45 seconds') as here,
+        (select coalesce(sum(n), 0)::int from visit_totals where day > current_date - 7) as week,
+        (select coalesce(sum(n), 0)::int from visit_totals) as ever
+    `) as unknown as { here: number; week: number; ever: number }[];
 
     return NextResponse.json(
-      { here: row?.n ?? 1 },
+      { here: row?.here ?? 1, week: row?.week ?? 0, ever: row?.ever ?? 0 },
       { headers: { "cache-control": "no-store" } },
     );
   } catch (e) {
     console.error("[here]", e);
     /* Never guess. A count we could not read is not a count we may invent. */
-    return NextResponse.json({ here: 0 }, { headers: { "cache-control": "no-store" } });
+    return NextResponse.json({ here: 0, week: 0, ever: 0 }, { headers: { "cache-control": "no-store" } });
   }
 }

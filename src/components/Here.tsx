@@ -2,28 +2,37 @@
 
 import { useEffect, useState } from "react";
 
+type Counts = { here: number; week: number; ever: number };
+
+/* 1,240 -> "1.2k". Under a thousand keeps its exact figure, because rounding a
+   real small number is the first step towards inflating it. */
+const short = (n: number) =>
+  n < 1000 ? String(n) : n < 10_000 ? `${(n / 1000).toFixed(1)}k` : `${Math.round(n / 1000)}k`;
+
+/* A weekly or all-time figure only appears once it means something. The house
+   rule allows holding a small real number back; it does not allow inflating one,
+   so nothing here is ever rounded up to look busier. "Online now" is always
+   shown, including when it is 1 — that is a true and useful thing to say. */
+const WEEK_FLOOR = 25;
+const EVER_FLOOR = 50;
+
 /**
  * The room, at the top of the page.
  *
- * Every number here is counted, never estimated. Until the heartbeat comes
- * back nothing is claimed at all — an activity strip that renders "1 here" on
- * the server and then corrects itself is the stale-flash this project bans, and
- * the honest version of "we do not know yet" is to say nothing.
- *
- * "You are the only one here" is a real answer and it gets shown. A site with
- * one reader that says "12 online" is lying, and this one will have days with
- * one reader.
+ * Nothing is claimed until the first heartbeat returns. A bar that renders on
+ * the server and then corrects itself is the stale flash this project bans, and
+ * the honest form of "not known yet" is to show nothing.
  */
 export function Here({ found, when }: { found: number; when: string | null }) {
-  const [here, setHere] = useState<number | null>(null);
+  const [c, setC] = useState<Counts | null>(null);
 
   useEffect(() => {
     let dead = false;
     const beat = async () => {
       try {
         const r = await fetch("/api/here", { method: "POST" });
-        const d = (await r.json()) as { here: number };
-        if (!dead && typeof d.here === "number" && d.here > 0) setHere(d.here);
+        const d = (await r.json()) as Counts;
+        if (!dead && typeof d.here === "number" && d.here > 0) setC(d);
       } catch { /* silence beats a wrong number */ }
     };
     beat();
@@ -31,22 +40,34 @@ export function Here({ found, when }: { found: number; when: string | null }) {
     return () => { dead = true; clearInterval(id); };
   }, []);
 
-  const parts: string[] = [];
-  if (here !== null) {
-    parts.push(here === 1 ? "just you here right now" : `${here} people here right now`);
+  const stats: { n: string; label: string }[] = [];
+  if (c) {
+    if (c.week >= WEEK_FLOOR) stats.push({ n: short(c.week), label: "visitors this week" });
+    if (c.ever >= EVER_FLOOR) stats.push({ n: short(c.ever), label: "visitors all-time" });
   }
   if (found > 0) {
-    parts.push(`${found} new ${found === 1 ? "ask" : "asks"} found ${when ?? "recently"}`);
+    stats.push({ n: String(found), label: `new ${found === 1 ? "ask" : "asks"} ${when ?? "recently"}` });
   }
-  if (parts.length === 0) return null;
+  if (!c && stats.length === 0) return null;
 
   return (
-    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-      <span className="relative flex h-1.5 w-1.5 shrink-0" aria-hidden>
-        <span className="absolute inline-flex h-full w-full rounded-full bg-good opacity-70 pulse" />
-        <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-good" />
-      </span>
-      {parts.join(" · ")}
-    </p>
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 rounded-full border border-rule px-4 py-2 text-xs">
+      {c && (
+        <span className="flex items-center gap-2">
+          <span className="relative flex h-1.5 w-1.5 shrink-0" aria-hidden>
+            <span className="absolute inline-flex h-full w-full rounded-full bg-good opacity-70 pulse" />
+            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-good" />
+          </span>
+          <span className="font-medium text-ink">{c.here}</span>
+          <span className="text-muted">{c.here === 1 ? "here now" : "online now"}</span>
+        </span>
+      )}
+      {stats.map((s) => (
+        <span key={s.label} className="flex items-center gap-1.5">
+          <span className="font-medium text-ink">{s.n}</span>
+          <span className="text-muted">{s.label}</span>
+        </span>
+      ))}
+    </div>
   );
 }

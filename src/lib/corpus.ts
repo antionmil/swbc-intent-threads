@@ -193,6 +193,37 @@ export function expand(list: string[], cap = 40): string[] {
   return [...out].slice(0, cap);
 }
 
+/**
+ * Does this index know anything about the subject of this page?
+ *
+ * Interior AI says "interior" twelve times. No lead in 1,932 contains that
+ * word. The ranker still filled a page, matching "estate" and "staging" out of
+ * one line of copy about property listings, and offered somebody selling an AI
+ * interior renderer "What would you recommend for real estate leads?" — as a
+ * STRONG match.
+ *
+ * The test is the page's dominant word. If one word carries the page and the
+ * corpus has never seen it, the corpus does not cover this product, and the
+ * honest output is to say so rather than to hand over the nearest words that
+ * happened to collide. When no single word dominates there is nothing to
+ * conclude, so coverage is assumed and the ranking decides as usual.
+ *
+ * Checked against four products: interiorai "interior" x12 df 0 — not covered.
+ * cal.com "scheduling" x6 df 9 — covered. plausible "analytics" x10 df 2 —
+ * covered. linear "planning" x3 df 3 — covered.
+ */
+export function coverage(queryTerms: string[]): { word: string; covered: boolean } {
+  const q = new Map<string, number>();
+  for (const t of queryTerms) q.set(t, (q.get(t) ?? 0) + 1);
+  const sorted = [...q.entries()].sort((a, b) => b[1] - a[1]);
+  const top = sorted[0];
+  if (!top) return { word: "", covered: true };
+  const [word, n] = top;
+  const second = sorted[1]?.[1] ?? 0;
+  const dominates = n >= second * 1.5;
+  return { word, covered: !dominates || (DF.get(word) ?? 0) > 0 };
+}
+
 export function rank(
   queryTerms: string[],
   limit = 24,
@@ -211,9 +242,19 @@ export function rank(
      corpus has never seen scores maximum IDF and can never match anything, so
      sorting by IDF alone promoted "cookieless" and "self-hostable" over
      "analytics" and left the useful terms outside the cut. */
+  /* Ranked by idf x tf, not by idf alone.
+   *
+   * Rarity alone chose the query terms, so the RAREST word on the page won and
+   * the rarest word is usually the most accidental one. Interior AI put
+   * "staging" (1 lead) and "estate" (3 leads) above "design" (11 leads),
+   * because "It's time to virtually stage real estate listings" is one line of
+   * copy while "design" is what the whole page is about. Multiplying by term
+   * frequency asks how central a word is to the page as well as how rare it is
+   * in the corpus, which is the pair of questions that has to be answered. */
   const qTerms = [...q.keys()]
     .filter((t) => (DF.get(t) ?? 0) > 0)
-    .sort((a, b) => idf(b) - idf(a))
+    .sort((a, b) => idf(b) * (1 + Math.log(1 + (q.get(b) ?? 0))) -
+                    idf(a) * (1 + Math.log(1 + (q.get(a) ?? 0))))
     .slice(0, 16);
   if (qTerms.length === 0) return [];
 
@@ -229,7 +270,14 @@ export function rank(
     [...q.entries()]
       .filter(([t]) => (DF.get(t) ?? 0) > 0)
       .sort((a, b) => b[1] - a[1] || idf(b[0]) - idf(a[0]))
-      .slice(0, 8)
+      /* Five, not eight. This is the list a match has to touch, so it has to
+         mean "what the page is about" and not "what the page mentions".
+         Interior AI's eighth-most-frequent word is "estate", from one line
+         about staging property listings, and letting that count returned
+         "What would you recommend for real estate leads?" to somebody selling
+         an AI interior renderer. At five it is design, staging, ideas,
+         intelligence, stage — and "estate" no longer decides anything. */
+      .slice(0, 5)
       .map(([t]) => t),
   );
 
