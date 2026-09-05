@@ -110,6 +110,10 @@ export type Hit = {
   lead: Lead; score: number; shared: string[];
   /** Whether the lead wants the same KIND of thing the product is. */
   agree?: "same" | "different" | "unknown";
+  /** How many shared words come from the product's own description of itself. */
+  identity?: number;
+  /** Whether the lead landed inside one of the product's subjects. */
+  concept?: boolean;
 };
 
 /**
@@ -173,6 +177,34 @@ const CONCEPTS: string[][] = [
   "chat messaging inbox threads notifications".split(" "),
 ];
 
+/* Which words may NAME a subject, as opposed to merely belonging to one.
+ *
+ * "tax" is in the accounting group and it is the third word of Lemon Squeezy's
+ * title — "Payments, tax & subscriptions for software companies". Letting it
+ * name the subject offered a payments company somebody asking about payroll for
+ * three groundskeepers, and somebody asking what percentage service tax is,
+ * both as STRONG matches. The word is the same; the job is not.
+ *
+ * So a group is named only by its unambiguous words. The rest still match once
+ * the subject is settled by something else — "metrics" is real evidence for an
+ * analytics product and no evidence at all about what a product is. */
+const HEADS = new Set(
+  ("schedule scheduling scheduler appointment appointments booking bookings calendar calendars " +
+   "analytics " +
+   "invoice invoices invoicing billing " +
+   "crm " +
+   "accounting bookkeeping payroll " +
+   "inventory " +
+   "newsletter subscribers " +
+   "notes notebook wiki " +
+   "todo kanban " +
+   "backup backups " +
+   "player streaming playlist subtitles " +
+   "password passwords vault " +
+   "monitoring observability uptime " +
+   "chat messaging inbox").split(" "),
+);
+
 const GROUP = new Map<string, number>();
 CONCEPTS.forEach((words, i) => words.forEach((w) => GROUP.set(w, i)));
 
@@ -230,7 +262,17 @@ export function rank(
   over: Lead[] = LEADS,
   /** What the pasted product is FOR, classified the same way a lead is. */
   productTopic?: string,
+  /** Terms from the product's title, description and first heading. */
+  key: string[] = [],
+  /** Terms from the title and first heading only — the product's own name for
+   *  what it is. Only these may decide the subject. */
+  name: string[] = [],
 ): Hit[] {
+  /* Identity, as opposed to everything the page happens to contain. A feature
+     list is not an identity. When the caller gives us none, every term counts,
+     which is the old behaviour. */
+  const IDENT = new Set(key.length ? key : queryTerms);
+  const NAME = new Set(name.length ? name : IDENT);
   const q = new Map<string, number>();
   for (const t of queryTerms) q.set(t, (q.get(t) ?? 0) + 1);
 
@@ -305,7 +347,11 @@ export function rank(
   const qGroups = new Map<number, string>();
   for (const t of qTerms) {
     const g = GROUP.get(t);
-    if (g !== undefined && core.has(t) && (q.get(t) ?? 0) >= 2 && !qGroups.has(g)) qGroups.set(g, t);
+    /* Triggered from the identity only. "dashboard" appears twice in
+       PocketBase's feature list and made a backend framework an analytics
+       product; the count test could not tell a doubled title word from a word
+       used twice in the body, so it has to be the identity itself. */
+    if (g !== undefined && core.has(t) && NAME.has(t) && HEADS.has(t) && !qGroups.has(g)) qGroups.set(g, t);
   }
 
   for (const lead of over) {
@@ -395,7 +441,14 @@ export function rank(
     const quality = 0.55 + 0.45 * lead.score;
     /* Agreement is a strong tilt, not a veto: 1.35 when both sides say the same
        subject, 0.3 when they say different ones, 1 when either is unlabelled. */
-    out.push({ lead, score: overlap * quality, shared, agree: conceptHit ? "same" : "unknown" });
+    /* How many of the shared words are words the product uses to describe
+       ITSELF. A match on nothing but body vocabulary is a coincidence with a
+       larger vocabulary. */
+    const identity = shared.filter((t) => IDENT.has(t)).length;
+    out.push({
+      lead, score: overlap * quality, shared,
+      agree: conceptHit ? "same" : "unknown", identity, concept: conceptHit,
+    });
   }
   out.sort((a, b) => b.score - a.score);
 
@@ -437,7 +490,31 @@ export function band(hits: Hit[], h: Hit): "strong" | "worth a look" | "loose" {
   /* A lead that wants a different KIND of thing is never strong, whatever it
      shares. That is the whole point of asking. */
   if (h.agree === "different") return h.shared.length >= 2 ? "worth a look" : "loose";
-  if (r >= 0.7 && rarest >= 5.0 && h.shared.length >= 2) return "strong";
+
+  /* STRONG has to mean "this person is asking for your product", and it was
+     being handed out for a shared word or two. Measured over 25 real products:
+     Railway got "servers, cloud" against somebody wanting off-site backup;
+     Framer got "dashboard, agent" against an iPhone notification list;
+     Typefully got "social, media" against a bookkeeping question. Every one of
+     those shared two words and none of them was a lead.
+     What separated the good matches — cal.com, cron.com, plausible, umami — was
+     that the shared word was inside the product's own SUBJECT, not just its
+     vocabulary. So strong now needs the subject, or two words the product uses
+     to describe itself. */
+  /* Strong requires the SUBJECT, not just vocabulary.
+   *
+   * Measured across 25 real products. Every match that read as a real lead —
+   * cal.com to appointment bookers, cron.com to calendar users, Plausible and
+   * Umami to people wanting page stats — landed inside the product's subject.
+   * Every match that read as noise did not: Railway got "servers, cloud"
+   * against off-site backup, Typefully got "social, media" against a
+   * bookkeeping question, Framer got "dashboard, agent" against an iPhone
+   * notification list. All of those shared two or more words.
+   *
+   * When the corpus does not know the product's subject there is nothing here
+   * that is strongly asking for it, and the page says so rather than promoting
+   * the closest words it can find. */
+  if (r >= 0.7 && rarest >= 5.0 && h.shared.length >= 2 && h.concept) return "strong";
   if (r >= 0.35 && rarest >= 4.2) return "worth a look";
   return "loose";
 }

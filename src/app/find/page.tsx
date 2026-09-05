@@ -47,8 +47,8 @@ export default async function Find({
   const productTopic = topicOf(`${read.title} ${read.blurb}`);
   const topic = productTopic === "other" ? undefined : productTopic;
   const all: Hit[] = live?.length
-    ? rank(read.terms, 60, live, topic)
-    : rank(read.terms, 60, undefined, topic);
+    ? rank(read.terms, 60, live, topic, read.key, read.name)
+    : rank(read.terms, 60, undefined, topic, read.key, read.name);
   /* Strong first, and only a taste of the tail. With a corpus this size most
      products have one real match and a long shadow of near-misses; showing all
      of them buries the one that matters and makes the good one look like noise. */

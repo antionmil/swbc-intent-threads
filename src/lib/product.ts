@@ -13,7 +13,7 @@ import { decode } from "./readable";
  */
 export type Read = {
   url: string; host: string; title: string; blurb: string;
-  terms: string[]; weighted: string[];
+  terms: string[]; weighted: string[]; key: string[]; name: string[];
 };
 
 const pick = (html: string, re: RegExp) => (html.match(re)?.[1] ?? "").trim();
@@ -262,6 +262,20 @@ async function fetchProduct(url: string): Promise<Read | null> {
     title: title || host,
     blurb: blurb || "",
     terms: all,
+    /* What the product SAYS IT IS — title, description, first heading. Separate
+       from the h2 feature list, because a feature is not an identity: PocketBase
+       has an admin dashboard and Framer mentions analytics, and letting either
+       word decide the subject made one a metrics tool and the other a log
+       analyser. */
+    key: [...new Set(strong)],
+    /* The one line the product uses to say what it is. NOT the meta
+       description, which ends in a feature list on every marketing page:
+       PocketBase's finishes "and admin dashboard", Framer's "with hosting,
+       security, analytics, CMS, and SEO built in", Typefully's "Grow faster
+       with analytics". Reading the subject from there made a backend framework
+       a metrics tool, a website builder a log analyser, and a social publishing
+       tool an analytics product. */
+    name: [...new Set(terms([title, h1].join(" ")))],
     weighted: [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 18).map(([t]) => t),
   };
 }
