@@ -118,11 +118,19 @@ export async function mineStack(pages = 8, from = 1): Promise<Result> {
   /* `from` exists because the daily job wants the newest hundred questions and
      a backfill wants the other twenty-three thousand. Without it every run
      re-read page one and added nothing after the first. */
+  /* Optional, and the only thing standing between 2,431 questions and 23,370.
+     Without it the API refuses page 26 with "page above 25 requires access
+     token or app key", and the daily quota is 300 requests instead of 10,000.
+     The key is not a secret in the way a token is — Stack Exchange treats it as
+     an identifier — but it lives in the environment with everything else. */
+  const key = process.env.STACK_KEY?.trim();
+  const auth = key ? `&key=${encodeURIComponent(key)}` : "";
+
   for (let page = from; page < from + pages; page++) {
     const d = await j<{
       items?: Record<string, unknown>[]; has_more?: boolean; backoff?: number;
     }>("https://api.stackexchange.com/2.3/questions?order=desc&sort=creation" +
-       `&site=softwarerecs&pagesize=100&page=${page}&filter=withbody`);
+       `&site=softwarerecs&pagesize=100&page=${page}&filter=withbody${auth}`);
     if (!d?.items?.length) break;
 
     for (const q of d.items) {

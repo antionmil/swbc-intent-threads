@@ -53,7 +53,7 @@ async function status() {
     const v = process.env[k];
     return v === undefined ? "unset" : v.trim() === "" ? "empty" : `${v.trim().length} chars`;
   };
-  const note = ["YOUTUBE_API_KEY", "GITHUB_TOKEN", "DATABASE_URL", "CRON_SECRET"]
+  const note = ["YOUTUBE_API_KEY", "GITHUB_TOKEN", "STACK_KEY", "DATABASE_URL", "CRON_SECRET"]
     .map((k) => `${k}=${seen(k)}`).join(" ");
   let videos = 0;
   try {
