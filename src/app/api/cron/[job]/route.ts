@@ -1,7 +1,8 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { hasDb, sql } from "@/lib/db";
-import { mineGithub, mineYouTube } from "@/lib/mine";
+import { discoverYouTube, mineGithub, mineYouTube } from "@/lib/mine";
+import { slice } from "@/lib/queries";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -23,6 +24,43 @@ function sameSecret(a: string, b: string) {
      longer of the two and folding the length into the result. */
   if (x.length !== y.length) return false;
   return timingSafeEqual(x, y);
+}
+
+/**
+ * A day of YouTube: find some new videos, then read comments.
+ *
+ * Twelve searches at 100 quota units, plus 120 comment pages at 1 unit, is
+ * about 1,320 of the 10,000 a day. The rotation in queries.ts means the whole
+ * 125-query list comes round roughly every ten days, so the corpus keeps
+ * reaching subjects it has not seen instead of re-reading the same videos.
+ */
+async function youtubeDay() {
+  const found = await discoverYouTube(slice(12));
+  /* 400, not 120. A comment page is one quota unit against a daily 10,000, and
+     at 120 a day the 2,385 videos discovery just found would take twenty days
+     to read. The twelve searches cost 1,200 units; this costs 400. */
+  const mined = await mineYouTube(400);
+  return {
+    found: found.found + mined.found,
+    added: mined.added,
+    note: `${found.added} new videos${found.note ? " — " + found.note : ""}`,
+  };
+}
+
+/** What this deployment can actually reach. No secrets, only whether and how long. */
+async function status() {
+  const seen = (k: string) => {
+    const v = process.env[k];
+    return v === undefined ? "unset" : v.trim() === "" ? "empty" : `${v.trim().length} chars`;
+  };
+  const note = ["YOUTUBE_API_KEY", "GITHUB_TOKEN", "DATABASE_URL", "CRON_SECRET"]
+    .map((k) => `${k}=${seen(k)}`).join(" ");
+  let videos = 0;
+  try {
+    const r = (await sql()`select count(*)::int as n from videos`) as unknown as { n: number }[];
+    videos = r[0]?.n ?? 0;
+  } catch { /* the note already says whether the database is configured */ }
+  return { found: videos, added: 0, note };
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ job: string }> }) {
@@ -73,7 +111,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ job:
   try {
     const r =
       job === "github" ? await mineGithub()
-      : job === "youtube" ? await mineYouTube()
+      : job === "youtube" ? await youtubeDay()
+      /* Reading only, no searching. A search costs 100 quota units and a
+         comment page costs 1, so after a big discovery run the backlog is
+         cleared with this rather than by paying for discovery again. */
+      : job === "youtube-read" ? await mineYouTube(400)
+      /* Costs nothing and answers the question the runs table kept raising.
+         For four days every YouTube run recorded "no YOUTUBE_API_KEY" while the
+         Vercel dashboard listed that very variable, and there was no way to
+         tell from outside whether the value was empty, the wrong environment,
+         or something else. Names and lengths only — never a value. */
+      : job === "status" ? await status()
       : null;
     if (!r) return NextResponse.json({ error: "unknown job" }, { status: 404 });
 

@@ -142,6 +142,44 @@ async function lastRun(): Promise<{ found: number; when: string | null }> {
 
 export const lastFind = unstable_cache(lastRun, ["last-run"], { revalidate: 300 });
 
+/**
+ * Word statistics over the LIVE corpus, not the bundled artifact.
+ *
+ * The ranking decides whether a word exists by looking it up in DF, and DF was
+ * built from src/data/corpus.json — a file regenerated only when somebody runs
+ * a script by hand. So the crons could add a lead about interior design every
+ * day for a month and "interior" would still read as a word this index has
+ * never seen, because the file it asks had not changed. New subjects could
+ * enter the database and never become findable.
+ *
+ * Recomputed hourly from the leads themselves. It is one query and a tokenise
+ * over about 2,000 short rows.
+ */
+async function buildStats(): Promise<{ n: number; df: Record<string, number> }> {
+  if (!hasDb()) return { n: 0, df: {} };
+  try {
+    const rows = (await sql()`
+      select l.wish, l.ctx from leads l
+        left join blocked b on lower(b.who) = lower(l.who)
+       where b.who is null and lower(l.who) not in ('ghost', 'deleted', '[deleted]')
+    `) as unknown as { wish: string; ctx: string | null }[];
+    if (rows.length < 100) return { n: 0, df: {} };
+    const df: Record<string, number> = {};
+    for (const r of rows) {
+      for (const t of new Set(tokenise(`${clipped(r.wish)} ${r.ctx ?? ""}`))) {
+        df[t] = (df[t] ?? 0) + 1;
+      }
+    }
+    return { n: rows.length, df };
+  } catch (e) {
+    console.error("[leads] buildStats failed", e);
+    return { n: 0, df: {} };
+  }
+}
+
+/** Falls back to the artifact's own numbers when n is 0. */
+export const liveStats = unstable_cache(buildStats, ["corpus-stats"], { revalidate: 3600 });
+
 /** How many distinct people, not how many rows. */
 export function peopleIn(rows: { who: string }[]): number {
   return new Set(rows.map((r) => r.who.toLowerCase())).size;

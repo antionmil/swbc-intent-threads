@@ -2,7 +2,7 @@ import Link from "next/link";
 import { LeadRow } from "@/components/LeadRow";
 import { band, coverage, expand, rank, type Hit } from "@/lib/corpus";
 import { topicOf } from "@/lib/topics";
-import { peopleIn, search } from "@/lib/leads";
+import { liveStats, peopleIn, search } from "@/lib/leads";
 import { normalise, readProduct } from "@/lib/product";
 
 /* Cannot be prerendered — the URL is only known at request time — but the
@@ -41,14 +41,21 @@ export default async function Find({
   /* Expanded before it reaches Postgres. Recall happens here, so a subject word
      the product did not literally use has to be in the query or the ranker never
      sees the lead that used it. */
-  const live = await search(expand(read.weighted), 300);
+  /* Word counts from the LIVE corpus, fetched alongside the candidates. The
+     ranking decides whether a word exists by looking it up here, and it used to
+     look it up in a file that changed only when somebody regenerated it — so a
+     subject the crons added yesterday stayed invisible until the next deploy. */
+  const [live, stats] = await Promise.all([
+    search(expand(read.weighted), 300),
+    liveStats(),
+  ]);
   /* The product, classified by the same rules the leads were — the judgement
      step in rank() compares the two, so both have to be measured the same way. */
   const productTopic = topicOf(`${read.title} ${read.blurb}`);
   const topic = productTopic === "other" ? undefined : productTopic;
   const all: Hit[] = live?.length
-    ? rank(read.terms, 60, live, topic, read.key, read.name)
-    : rank(read.terms, 60, undefined, topic, read.key, read.name);
+    ? rank(read.terms, 60, live, topic, read.key, read.name, stats)
+    : rank(read.terms, 60, undefined, topic, read.key, read.name, stats);
   /* Strong first, and only a taste of the tail. With a corpus this size most
      products have one real match and a long shadow of near-misses; showing all
      of them buries the one that matters and makes the good one look like noise. */
@@ -64,7 +71,7 @@ export default async function Find({
      about its own results — a hackathon page got exactly that, over a comment
      about entering tunnels in a game. */
   /* The corpus has to know the subject before any of this means anything. */
-  const cover = coverage(read.terms);
+  const cover = coverage(read.terms, stats);
   const nothingReal = strong.length === 0 || !cover.covered;
 
   return (

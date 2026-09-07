@@ -134,11 +134,98 @@ export async function mineGithub(days = 3): Promise<Result> {
    NEED — measured on 360 comments, 5% state a need only the video makes sense
    of, which is more than the 3% that stand alone. */
 const YT_WANT = /\b(i(?:'m| am)? ?looking for (?:a|an|some)|i wish (?:there|it|they|someone)|i (?:want|need) (?:a|an|some)|is there (?:a|an|any) \w+ that|does (?:it|this|any) \w+ (?:do|have|support|handle)|what (?:app|tool|software|platform|one) (?:do|would|should)|which (?:app|tool|software|platform|one) (?:do|would|should|is)|what (?:do|would) (?:you|yall|u) recommend|anyone know (?:of )?(?:a|an)|i(?:'d| would) pay for)\b/i;
-const YT_DOMAIN = /\b(crm|invoic\w*|accounting|bookkeep\w*|payroll|analytics|form|survey|newsletter|email|password|calendar|schedul\w*|booking|appointment|inventory|pos|note|notes|backup|expense|helpdesk|signature|website|tax|receipt|mileage|seo)\b/i;
+/* The vocabulary that says a comment is about a THING somebody wants, rather
+ * than chit-chat under a video. It used to be twenty-six words, all of them
+ * small-business software — crm, invoicing, payroll, analytics — so a comment
+ * under an interior-design video was thrown away before anything looked at it.
+ * A visitor pasting an interior-design tool was then told nobody had asked for
+ * it, which was true only because nothing had been allowed to listen. */
+const YT_DOMAIN = new RegExp(
+  "\\b(" + [
+    // business software, as before
+    "crm", "invoic\\w*", "accounting", "bookkeep\\w*", "payroll", "analytics", "form", "forms",
+    "survey", "newsletter", "email", "password", "calendar", "schedul\\w*", "booking", "appointment",
+    "inventory", "pos", "note", "notes", "backup", "expense", "helpdesk", "signature", "website",
+    "tax", "receipt", "mileage", "seo", "invoice", "quote", "quoting", "payment", "payments",
+    // design and making
+    "design\\w*", "render\\w*", "floorplan", "floor", "layout", "moodboard", "sketch\\w*",
+    "cad", "3d", "model\\w*", "furniture", "interior", "interiors", "decor", "decorating",
+    "renovation", "remodel\\w*", "staging", "kitchen", "bathroom", "garden", "landscap\\w*",
+    "logo", "font", "fonts", "palette", "mockup", "prototype", "wireframe", "illustration",
+    // media
+    "photo", "photos", "picture", "pictures", "image", "images", "video", "videos", "audio",
+    "music", "podcast", "subtitle", "subtitles", "thumbnail", "stream\\w*", "edit\\w*",
+    "transcri\\w*", "recording",
+    // home, property, trades
+    "property", "rental", "tenant", "landlord", "contractor", "estimat\\w*", "blueprint",
+    // personal and everyday
+    "budget\\w*", "habit", "journal\\w*", "recipe", "recipes", "meal", "workout", "fitness",
+    "sleep", "meditation", "language", "flashcard\\w*", "study", "reading", "ebook", "travel",
+    "packing", "pet", "baby", "wedding",
+    // work and study
+    "resume", "cv", "portfolio", "contract", "proposal", "whiteboard", "diagram", "mindmap",
+    "presentation", "spreadsheet", "database",
+    // technical
+    "server", "servers", "hosting", "nas", "vpn", "storage", "monitoring", "api", "logs",
+    "automation", "workflow", "integration", "dashboard", "report", "reports",
+    // the generic shapes of a product
+    "app", "apps", "tool", "tools", "software", "platform", "plugin", "extension", "service",
+  ].join("|") + ")\\b",
+  "i",
+);
 const YT_META = /\b(part \d|next video|another video|video (on|about)|make a video|your channel|tutorial on|more (information|content|videos?) like|keep (them|it) coming)\b/i;
 const LINKY = /(https?:\/\/|t\.me|whatsapp|telegram|\+\d{7,})/i;
 
 /** Reads the least recently read videos. Discovery is a separate, rarer job. */
+/**
+ * Find videos worth reading the comments under.
+ *
+ * The cron had no discovery at all. Every video it knew came from a script run
+ * by hand months ago, so the corpus could re-read its own 572 videos forever
+ * and never learn a subject it had not already been pointed at. That is a
+ * corpus that cannot grow, which for this site is the same as a corpus that
+ * does not work.
+ *
+ * A search costs 100 quota units out of 10,000 a day, so the caller passes a
+ * small slice and the rotation in queries.ts brings the rest round over time.
+ */
+export async function discoverYouTube(queries: string[]): Promise<Result> {
+  const key = process.env.YOUTUBE_API_KEY?.trim();
+  if (!key) return { found: 0, added: 0, note: "no YOUTUBE_API_KEY" };
+
+  let found = 0;
+  const rows: { id: string; title: string }[] = [];
+  for (const q of queries) {
+    const d = await j<{ items?: Record<string, unknown>[] }>(
+      "https://www.googleapis.com/youtube/v3/search?part=snippet&type=video" +
+      `&maxResults=25&relevanceLanguage=en&order=relevance&q=${encodeURIComponent(q)}&key=${key}`);
+    for (const it of d?.items ?? []) {
+      const id = ((it.id as Record<string, unknown>)?.videoId ?? "") as string;
+      const title = String((it.snippet as Record<string, unknown>)?.title ?? "");
+      if (!id || !title) continue;
+      found++;
+      rows.push({ id, title: title.slice(0, 200) });
+    }
+    await wait(120);
+  }
+
+  let added = 0;
+  for (const r of rows) {
+    try {
+      /* MERGED, never overwritten. An earlier version of this replaced the
+         table wholesale and destroyed about 3,400 discovered videos. */
+      const done = (await sql()`
+        insert into videos (id, title) values (${r.id}, ${r.title})
+        on conflict (id) do nothing returning id
+      `) as unknown as { id: string }[];
+      if (done.length) added++;
+    } catch (e) {
+      console.error("[mine] video insert failed", e);
+    }
+  }
+  return { found, added };
+}
+
 export async function mineYouTube(videos = 120): Promise<Result> {
   const key = process.env.YOUTUBE_API_KEY?.trim();
   if (!key) return { found: 0, added: 0, note: "no YOUTUBE_API_KEY" };
@@ -186,7 +273,7 @@ export async function mineYouTube(videos = 120): Promise<Result> {
       });
     }
     await sql()`update videos set last_read = now() where id = ${v.id}`;
-    await wait(90);
+    await wait(40);
   }
   return { found, added: await insert(rows) };
 }

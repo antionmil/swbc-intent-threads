@@ -244,7 +244,11 @@ export function expand(list: string[], cap = 40): string[] {
  * cal.com "scheduling" x6 df 9 — covered. plausible "analytics" x10 df 2 —
  * covered. linear "planning" x3 df 3 — covered.
  */
-export function coverage(queryTerms: string[]): { word: string; covered: boolean } {
+export function coverage(
+  queryTerms: string[],
+  stats?: { n: number; df: Record<string, number> },
+): { word: string; covered: boolean } {
+  const dfOf = (t: string): number => (stats?.n ? (stats.df[t] ?? 0) : (DF.get(t) ?? 0));
   const q = new Map<string, number>();
   for (const t of queryTerms) q.set(t, (q.get(t) ?? 0) + 1);
   const sorted = [...q.entries()].sort((a, b) => b[1] - a[1]);
@@ -253,7 +257,7 @@ export function coverage(queryTerms: string[]): { word: string; covered: boolean
   const [word, n] = top;
   const second = sorted[1]?.[1] ?? 0;
   const dominates = n >= second * 1.5;
-  return { word, covered: !dominates || (DF.get(word) ?? 0) > 0 };
+  return { word, covered: !dominates || dfOf(word) > 0 };
 }
 
 export function rank(
@@ -267,7 +271,15 @@ export function rank(
   /** Terms from the title and first heading only — the product's own name for
    *  what it is. Only these may decide the subject. */
   name: string[] = [],
+  /** Live word counts. Without these the ranking asks a file that only changes
+   *  when somebody regenerates it, so anything the crons found since is
+   *  invisible to it. */
+  stats?: { n: number; df: Record<string, number> },
 ): Hit[] {
+  const live = stats?.n ? stats : null;
+  const dfOf = (t: string): number => (live ? (live.df[t] ?? 0) : (DF.get(t) ?? 0));
+  /* Same formula as the module-level idf, over whichever corpus we were given. */
+  const idfOf = (t: string) => Math.log(1 + (live ? live.n : N) / (1 + dfOf(t)));
   /* Identity, as opposed to everything the page happens to contain. A feature
      list is not an identity. When the caller gives us none, every term counts,
      which is the old behaviour. */
@@ -294,9 +306,9 @@ export function rank(
    * frequency asks how central a word is to the page as well as how rare it is
    * in the corpus, which is the pair of questions that has to be answered. */
   const qTerms = [...q.keys()]
-    .filter((t) => (DF.get(t) ?? 0) > 0)
-    .sort((a, b) => idf(b) * (1 + Math.log(1 + (q.get(b) ?? 0))) -
-                    idf(a) * (1 + Math.log(1 + (q.get(a) ?? 0))))
+    .filter((t) => dfOf(t) > 0)
+    .sort((a, b) => idfOf(b) * (1 + Math.log(1 + (q.get(b) ?? 0))) -
+                    idfOf(a) * (1 + Math.log(1 + (q.get(a) ?? 0))))
     .slice(0, 16);
   if (qTerms.length === 0) return [];
 
@@ -310,8 +322,8 @@ export function rank(
    * the honest answer in that case is that nobody has asked for this. */
   const core = new Set(
     [...q.entries()]
-      .filter(([t]) => (DF.get(t) ?? 0) > 0)
-      .sort((a, b) => b[1] - a[1] || idf(b[0]) - idf(a[0]))
+      .filter(([t]) => dfOf(t) > 0)
+      .sort((a, b) => b[1] - a[1] || idfOf(b[0]) - idfOf(a[0]))
       /* Five, not eight. This is the list a match has to touch, so it has to
          mean "what the page is about" and not "what the page mentions".
          Interior AI's eighth-most-frequent word is "estate", from one line
@@ -329,7 +341,7 @@ export function rank(
      identically because both are rare HERE. Rarity says a word is
      informative; frequency says the page is about it. You need both. */
   const tf = (t: string) => 1 + Math.log(1 + (q.get(t) ?? 0));
-  const w = (t: string) => idf(t) * tf(t);
+  const w = (t: string) => idfOf(t) * tf(t);
   const norm = Math.sqrt(qTerms.reduce((a, t) => a + w(t) ** 2, 0)) || 1;
   const out: Hit[] = [];
 
@@ -368,7 +380,7 @@ export function rank(
       if (!set.has(t)) continue;
       hits.set(t, {
         weight: w(t),
-        decisive: core.has(t) && (DF.get(t) ?? 0) >= 2 && idf(t) >= DECISIVE,
+        decisive: core.has(t) && dfOf(t) >= 2 && idfOf(t) >= DECISIVE,
       });
     }
 
@@ -383,7 +395,7 @@ export function rank(
         if (!set.has(sib)) continue;
         conceptHit = true;
         if (hits.has(sib)) continue;
-        hits.set(sib, { weight: 0.75 * idf(sib) * tf(qt), decisive: true });
+        hits.set(sib, { weight: 0.75 * idfOf(sib) * tf(qt), decisive: true });
       }
       /* The product's own word for the subject counts as being on-subject too. */
       if (set.has(qt)) conceptHit = true;
