@@ -65,14 +65,33 @@ const idOf = async (who: string, wish: string) => {
 
 type Result = { found: number; added: number; note?: string };
 
+/* A DNS blip cost a whole 4,000-question pass: "getaddrinfo ENOTFOUND
+   api.c-5.eu-central-1.aws.neon.tech". Neon is reached over HTTP, so a moment
+   of bad resolution looks exactly like a permanent failure to a single call.
+   One retry after a short pause turns most of those back into successes, and a
+   row that still will not write is dropped as before rather than losing the
+   batch behind it. */
+async function once<T>(fn: () => Promise<T>): Promise<T | null> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      const transient = /fetch failed|ENOTFOUND|ECONNRESET|ETIMEDOUT|socket hang up/i.test(msg);
+      if (!transient || attempt === 1) return null;
+      await wait(400);
+    }
+  }
+  return null;
+}
+
 async function insert(rows: {
   id: string; src: string; who: string; repo: string; ctx: string;
   when: string; wish: string; url: string; score: number; avatar?: string;
 }[]) {
   let added = 0;
   for (const r of rows) {
-    try {
-      const out = await sql()`
+    const out = await once(() => sql()`
         insert into leads (id, src, who, repo, ctx, asked_on, wish, url, score, avatar, topic)
         values (${r.id}, ${r.src}, ${r.who}, ${r.repo}, ${r.ctx},
                 ${r.when || null}, ${r.wish}, ${r.url}, ${r.score}, ${r.avatar ?? null},
@@ -83,9 +102,8 @@ async function insert(rows: {
                   : topicOf(clipped(r.wish), r.repo, r.ctx)})
         on conflict (url) do nothing
         returning id
-      `;
-      if ((out as unknown[]).length) added++;
-    } catch { /* one bad row must not lose the batch */ }
+      `);
+    if (out && (out as unknown[]).length) added++;
   }
   return added;
 }
