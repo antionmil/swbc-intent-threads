@@ -12,6 +12,7 @@ const WHERE: Record<string, (l: { repo: string; ctx?: string }) => string> = {
   github: (l) => l.repo || "GitHub",
   youtube: (l) => (l.ctx ? `YouTube · ${l.ctx}` : "YouTube"),
   hn: () => "Hacker News",
+  stack: (l) => (l.ctx ? `Software Recs · ${l.ctx}` : "Software Recommendations"),
 };
 
 export const metadata: Metadata = {

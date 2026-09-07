@@ -15,7 +15,7 @@ import blocklist from "@/data/blocked.json";
  * the person's own words, highlighted, which is verifiable instead.
  */
 export type Lead = {
-  id: string; src: "hn" | "github" | "youtube"; who: string; repo: string;
+  id: string; src: "hn" | "github" | "youtube" | "stack"; who: string; repo: string;
   when: string; wish: string; url: string; score: number; t: string[];
   /** The video a YouTube comment sits under. Without it the comment is not
    *  legible — and it is where the matched terms came from. */
@@ -175,6 +175,24 @@ const CONCEPTS: string[][] = [
   "monitoring alerts uptime logs observability telemetry".split(" "),
   "search searching indexing autocomplete".split(" "),
   "chat messaging inbox threads notifications".split(" "),
+
+  /* Added once the corpus could support them. Software Recommendations brought
+     2,431 product requests and moved photo from 14 leads to 64, video from 32
+     to 156, backup from 9 to 43. The groups had not caught up, so a video
+     editor could find 156 leads about video and still be told nothing here was
+     a strong match — the subject existed in the index and had no name. The
+     lead count behind each is measured, not guessed. */
+  "photo photos photography image images retouch lightroom raw screenshot".split(" "),   // 408
+  "video videos footage render timeline subtitles transcode screencast".split(" "),      // 184
+  "design designer mockup prototype wireframe logo branding drawing".split(" "),         //  90
+  "hosting deploy deployment vps docker kubernetes container".split(" "),                // 161
+  "backend database postgres sqlite mysql schema migrations".split(" "),                 // 216
+  "sync syncing storage dropbox folder folders".split(" "),                              // 533
+  /* Twenty leads is thin and it is what there is. Reddit is where these people
+     ask and Reddit is closed; YouTube has the audience but that audience does
+     not ask for products in comments — of 208 substantial comments under
+     eighteen interior-design videos, seven expressed a need. */
+  "interior interiors floorplan furniture decor decorating renovation kitchen".split(" "), // 20
 ];
 
 /* Which words may NAME a subject, as opposed to merely belonging to one.
@@ -202,7 +220,16 @@ const HEADS = new Set(
    "player streaming playlist subtitles " +
    "password passwords vault " +
    "monitoring observability uptime " +
-   "chat messaging inbox").split(" "),
+   "chat messaging inbox " +
+   /* Naming words for the new groups. Deliberately narrow: "image", "editor",
+      "file", "server", "cloud" and "api" all have hundreds of leads behind them
+      and none of them says what a product IS. */
+   "photo photos photography video videos footage " +
+   "design designer logo branding wireframe mockup " +
+   "hosting deploy deployment vps docker kubernetes " +
+   "backend database postgres sqlite " +
+   "sync dropbox " +
+   "interior interiors floorplan furniture decor renovation").split(" "),
 );
 
 const GROUP = new Map<string, number>();

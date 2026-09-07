@@ -19,7 +19,7 @@ type Wire = {
  * asked_on, because that is the true chronology of somebody wanting a thing.
  */
 /* Closed sets, checked here rather than interpolated: both reach a query. */
-const SOURCES = new Set(["github", "hn", "youtube"]);
+const SOURCES = new Set(["github", "hn", "youtube", "stack"]);
 const TOPIC_KEYS = new Set(TOPICS.map((t) => t.key as string));
 
 export async function GET(req: NextRequest) {

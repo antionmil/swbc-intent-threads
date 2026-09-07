@@ -92,6 +92,74 @@ async function insert(rows: {
 
 /** Yesterday's issues only. A full history walk belongs in a backfill, not in
  *  something that runs every night. */
+/**
+ * Software Recommendations, on Stack Exchange.
+ *
+ * Reddit would be the right source for the subjects this index is thin on, and
+ * it is closed: the free tier still costs nothing, but self-service app
+ * registration ended in late 2025 and every new client now waits weeks on a
+ * manual approval that may simply be refused. Commercial access is $0.24 per
+ * 1,000 calls with a five-figure monthly minimum.
+ *
+ * This site is a better fit than Reddit anyway. Every question on it IS a
+ * product request — "Android app for digitizing books & photo albums",
+ * "Image viewer with shuffle navigation" — where a YouTube comment is one about
+ * half a percent of the time. The title alone is a clean, one-line ask, which
+ * is the shape this whole index is built out of.
+ *
+ * Free and keyless at 300 requests a day, and one request returns a hundred
+ * questions. Content is CC BY-SA 4.0, so every row keeps its author's name and
+ * links back to the original, which this site does for every source anyway.
+ */
+export async function mineStack(pages = 8, from = 1): Promise<Result> {
+  let found = 0;
+  const rows: Parameters<typeof insert>[0] = [];
+
+  /* `from` exists because the daily job wants the newest hundred questions and
+     a backfill wants the other twenty-three thousand. Without it every run
+     re-read page one and added nothing after the first. */
+  for (let page = from; page < from + pages; page++) {
+    const d = await j<{
+      items?: Record<string, unknown>[]; has_more?: boolean; backoff?: number;
+    }>("https://api.stackexchange.com/2.3/questions?order=desc&sort=creation" +
+       `&site=softwarerecs&pagesize=100&page=${page}&filter=withbody`);
+    if (!d?.items?.length) break;
+
+    for (const q of d.items) {
+      found++;
+      const title = clean(String(q.title ?? ""));
+      if (title.length < 20) continue;
+      const owner = q.owner as Record<string, unknown> | undefined;
+      const who = String(owner?.display_name ?? "").trim();
+      /* No name, nobody to write to. The whole product is the reply. */
+      if (!who || owner?.user_type === "does_not_exist") continue;
+      const url = String(q.link ?? "");
+      if (!url) continue;
+
+      const asked = Number(q.creation_date ?? 0);
+      const when = asked ? new Date(asked * 1000).toISOString().slice(0, 10) : "";
+      /* Recency is most of the value here. A question from 2014 is a real ask
+         from a real person who has almost certainly stopped looking. */
+      const years = asked ? (Date.now() / 1000 - asked) / 31_557_600 : 99;
+      const score = years < 1 ? 1.1 : years < 3 ? 0.95 : years < 6 ? 0.8 : 0.65;
+
+      const tags = Array.isArray(q.tags) ? (q.tags as string[]).slice(0, 4).join(", ") : "";
+      rows.push({
+        id: await idOf(who, title), src: "stack", who, repo: "", ctx: tags,
+        when, wish: title.slice(0, 300), url, score,
+        avatar: String(owner?.profile_image ?? "") || undefined,
+      });
+    }
+
+    if (!d.has_more) break;
+    /* The API asks for this when it wants a pause, and ignoring it is how a
+       keyless caller loses the key it does not have. */
+    await wait(d.backoff ? d.backoff * 1000 : 250);
+  }
+
+  return { found, added: await insert(rows) };
+}
+
 export async function mineGithub(days = 3): Promise<Result> {
   const token = process.env.GITHUB_TOKEN?.trim();
   const headers: Record<string, string> = { accept: "application/vnd.github+json" };

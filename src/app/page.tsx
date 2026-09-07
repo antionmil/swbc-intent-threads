@@ -85,8 +85,8 @@ export default async function Home() {
           <h2 className="text-sm tracking-[0.12em] text-muted uppercase">What is in here</h2>
           <p className="prose-tight mt-3 max-w-prose text-body">
             Every row is one person, in public, saying they wanted something that did not
-            exist for them yet — from Hacker News comments, GitHub issues and YouTube
-            comments. Their words, their name, their link. Nothing is inferred and nothing
+            exist for them yet — from GitHub issues, Hacker News comments, YouTube
+            comments and Software Recommendations questions. Their words, their name, their link. Nothing is inferred and nothing
             comes from anywhere private.
           </p>
           <p className="prose-tight mt-3 max-w-prose text-sm text-muted">

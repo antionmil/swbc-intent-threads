@@ -10,14 +10,17 @@ export type Row = {
 };
 
 const PLATFORM: Record<string, string> = {
-  github: "GitHub", hn: "Hacker News", youtube: "YouTube",
+  github: "GitHub", hn: "Hacker News", youtube: "YouTube", stack: "Software Recs",
 };
 
 /* What it was said UNDER — the repo, or the video. The platform itself is on the
    byline above, so repeating it here just printed "YouTube · YouTube · title".
    Empty for Hacker News, which has no such container worth naming. */
 const UNDER = (r: Row) =>
-  r.src === "github" ? r.repo || "" : r.src === "youtube" ? r.ctx || "" : "";
+  r.src === "github" ? r.repo || ""
+  : r.src === "youtube" ? r.ctx || ""
+  : r.src === "stack" ? r.ctx || ""
+  : "";
 
 /** The full place, for a link's accessible name where there is no byline. */
 const WHERE = (r: Row) => {
@@ -31,6 +34,7 @@ const FILTERS = [
   { key: "github", label: "GitHub" },
   { key: "hn", label: "Hacker News" },
   { key: "youtube", label: "YouTube" },
+  { key: "stack", label: "Software Recs" },
 ] as const;
 
 type FilterKey = (typeof FILTERS)[number]["key"];

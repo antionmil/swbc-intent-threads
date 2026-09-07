@@ -57,8 +57,9 @@ export default async function Privacy() {
         <h2 className="text-sm tracking-[0.14em] text-muted uppercase">If you are in the index</h2>
         <p className="prose-tight mt-3 leading-relaxed text-body">
           There are {count.toLocaleString()} entries. Each one is a message somebody published
-          in public — a GitHub issue, a Hacker News comment, a YouTube comment — in which they
-          said they wanted something that did not exist for them. For each we hold: the words
+          in public — a GitHub issue, a Hacker News comment, a YouTube comment, a question on
+          Software Recommendations — in which they said they wanted something that did not exist
+          for them. For each we hold: the words
           themselves, the account name they were posted under, the link back to the original,
           the date, the repository or video it was posted under, and the address of the profile
           picture that account shows publicly on that platform. The picture is loaded from the
@@ -101,8 +102,13 @@ export default async function Privacy() {
       <section className="mt-10">
         <h2 className="text-sm tracking-[0.14em] text-muted uppercase">Not affiliated</h2>
         <p className="prose-tight mt-3 leading-relaxed text-muted">
+          Questions from Software Recommendations are used under CC BY-SA 4.0. Every one keeps
+          the name it was asked under and links back to the original, which is what that licence
+          asks for and what this site does for every source anyway.
+        </p>
+        <p className="prose-tight mt-3 max-w-prose text-muted">
           This site is not connected to, endorsed by, or operated with GitHub, Y Combinator,
-          Hacker News, Google or YouTube. Each entry links back to the original so you can read
+          Hacker News, Google, YouTube or Stack Exchange. Each entry links back to the original so you can read
           it in the place it was written. It is one of 26 sites built in 26 days at{" "}
           <a
             href="https://onedaybuilt.com"

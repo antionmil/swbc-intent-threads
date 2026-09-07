@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { hasDb, sql } from "@/lib/db";
-import { discoverYouTube, mineGithub, mineYouTube } from "@/lib/mine";
+import { discoverYouTube, mineGithub, mineStack, mineYouTube } from "@/lib/mine";
 import { slice } from "@/lib/queries";
 
 export const runtime = "nodejs";
@@ -121,6 +121,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ job:
          Vercel dashboard listed that very variable, and there was no way to
          tell from outside whether the value was empty, the wrong environment,
          or something else. Names and lengths only — never a value. */
+      : job === "stack"
+        ? await mineStack(
+            Math.min(40, Number(req.nextUrl.searchParams.get("pages")) || 8),
+            Math.max(1, Number(req.nextUrl.searchParams.get("from")) || 1),
+          )
       : job === "status" ? await status()
       : null;
     if (!r) return NextResponse.json({ error: "unknown job" }, { status: 404 });

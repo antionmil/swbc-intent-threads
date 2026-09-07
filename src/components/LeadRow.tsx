@@ -33,6 +33,7 @@ export function LeadRow({ hit, band }: { hit: Hit; band: keyof typeof TONE }) {
   const where =
     lead.src === "github" ? lead.repo || "GitHub"
     : lead.src === "youtube" ? "YouTube"
+    : lead.src === "stack" ? "Software Recommendations"
     : "Hacker News";
   /* The badge is the evidence, not a verdict: the rare words this person and
      your product both used. */
